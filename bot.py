@@ -99,7 +99,7 @@ async def start_command(client: Client, message: Message):
 
 media_groups = defaultdict(list)
 
-@Bot.on_message(filters.private & filters.media_group)
+@app.on_message(filters.private & filters.media_group)
 async def handle_album(client, message):
     media_groups[message.media_group_id].append(message)
     await asyncio.sleep(1.5)
@@ -132,7 +132,7 @@ async def handle_album(client, message):
     ]))
 
 
-@Bot.on_message(filters.private & filters.photo & ~filters.media_group)
+@app.on_message(filters.private & filters.photo & ~filters.media_group)
 async def handle_single_photo(client, message):
     user_id = message.from_user.id
     header = await db.get_header(user_id) or ""
@@ -154,8 +154,69 @@ async def handle_single_photo(client, message):
         ])
     )
 
+# /set_bot - Ask for bot username and save it
+@app.on_message(filters.command("set_bot") & filters.private)
+async def set_bot_cmd(client, message: Message):
+    await message.reply("Please send the bot username (without @):")
+    response = await client.listen(message.chat.id)
+    bot_username = response.text.strip().lstrip("@")
+    success = await db.set_bot(message.from_user.id, bot_username)
+    if success:
+        await message.reply(f"Bot username set to @{bot_username}")
+    else:
+        await message.reply("Failed to set bot username.")
+
+# /see_bot - Retrieve saved bot username
+@app.on_message(filters.command("see_bot") & filters.private)
+async def see_bot_cmd(client, message: Message):
+    bot_username = await db.get_bot(message.from_user.id)
+    if bot_username:
+        await message.reply(f"Your saved bot username is: @{bot_username}")
+    else:
+        await message.reply("No bot username found. Use /set_bot to save one.")
+
+# /set_header - Ask for header text and save it
+@app.on_message(filters.command("set_header") & filters.private)
+async def set_header_cmd(client, message: Message):
+    await message.reply("Please send the new header text:")
+    response = await client.listen(message.chat.id)
+    header_text = response.text.strip()
+    success = await db.set_header(message.from_user.id, header_text)
+    if success:
+        await message.reply("Header text saved successfully.")
+    else:
+        await message.reply("Failed to save header.")
+
+# /see_header - Retrieve saved header
+@app.on_message(filters.command("see_header") & filters.private)
+async def see_header_cmd(client, message: Message):
+    header_text = await db.get_header(message.from_user.id)
+    if header_text:
+        await message.reply(f"Your current header:\n\n{header_text}")
+    else:
+        await message.reply("No header found. Use /set_header to save one.")
 
 
+# /set_footer - Ask for footer text and save it
+@app.on_message(filters.command("set_footer") & filters.private)
+async def set_header_cmd(client, message: Message):
+    await message.reply("Please send the new footer text:")
+    response = await client.listen(message.chat.id)
+    footer_text = response.text.strip()
+    success = await db.set_footer(message.from_user.id, footer_text)
+    if success:
+        await message.reply("Footer text saved successfully.")
+    else:
+        await message.reply("Failed to save Footer.")
+
+# /see_footer - Retrieve saved footer
+@app.on_message(filters.command("see_footer") & filters.private)
+async def see_header_cmd(client, message: Message):
+    footer_text = await db.get_footer(message.from_user.id)
+    if footer_text:
+        await message.reply(f"Your current footer:\n\n{footer_text}")
+    else:
+        await message.reply("No footer found. Use /set_header to save one.")
 
 # Start bot
 if __name__ == "__main__":
