@@ -81,7 +81,7 @@ app = Bot()
 @app.on_message(filters.command('start') & filters.private)
 async def start_command(client: Client, message: Message):
     keyboard = InlineKeyboardMarkup(
-        [[InlineKeyboardButton("Contact Developer", url="https://telegram.dog/rohit_1888")]]
+        [[InlineKeyboardButton("Cᴏɴᴛᴀᴄᴛ Dᴇᴠᴇʟᴏᴘᴇʀ 💻", url="https://telegram.dog/rohit_1888")]]
     )
 
     await message.reply_photo(
