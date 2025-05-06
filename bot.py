@@ -96,6 +96,9 @@ async def start_command(client: Client, message: Message):
         reply_markup=keyboard
     )
 
+
+media_groups = defaultdict(list)
+
 @app.on_message(filters.private & filters.media_group)
 async def handle_album(client, message):
     media_groups[message.media_group_id].append(message)
