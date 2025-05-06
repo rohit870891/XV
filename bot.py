@@ -161,15 +161,21 @@ async def handle_single_photo(client, message):
         parts = full_match.split("?start=")
         return f"https://t.me/{saved_bot}?start={parts[1]}" if len(parts) == 2 else full_match
 
-    updated_caption = re.sub(r"https://t\.me/([\w_]+)\?start=\S+", replace_bot_username_in_link, caption)
+    updated_caption = re.sub(
+        r"https://t\.me/([\w_]+)\?start=\S+",
+        replace_bot_username_in_link,
+        caption
+    )
 
-    # Add header and footer
-    full_caption = f"{header}\n\n{updated_caption}\n\n{footer}".strip()
+    # Combine header, updated caption, and footer with spacing
+    parts = [header, updated_caption, footer]
+    full_caption = "\n\n".join(part for part in parts if part).strip()
 
+    # Send reply with raw formatting (no parse_mode)
     await message.reply_photo(
         photo=message.photo.file_id,
         caption=full_caption,
-        parse_mode=None  # Disable parsing to preserve raw text
+        parse_mode=None  # No parsing, so formatting stays as-is
     )
 
 # /set_bot - Ask for bot username and save it
