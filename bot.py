@@ -102,45 +102,51 @@ media_groups = defaultdict(list)
 @app.on_message(filters.private & filters.media_group)
 async def handle_album(client, message):
     media_groups[message.media_group_id].append(message)
-    await asyncio.sleep(1.5)
+    await asyncio.sleep(2.5)  # Wait for the full album to arrive
 
-    messages = [msg for msg in media_groups.pop(message.media_group_id, []) if hasattr(msg, "message_id") and msg.photo]
+    messages = media_groups.pop(message.media_group_id, [])
     if not messages:
+        return
+
+    messages = sorted(messages, key=lambda m: m.message_id)
+    photos = [msg for msg in messages if msg.photo]
+    if not photos:
         return
 
     user_id = message.from_user.id
     header = await db.get_header(user_id) or ""
     footer = await db.get_footer(user_id) or ""
-    saved_bot = await db.get_bot(user_id) or f"{client.me.username}"
+    bot_username = await db.get_bot(user_id) or f"@{client.me.username}"
+
+    # Replace t.me / telegram.me / telegram.dog bot links
+    def replace_bot_links(text: str) -> str:
+        return re.sub(
+            r"(https?://(?:t\.me|telegram\.me|telegram\.dog)/[\w_]+)",
+            lambda m: re.sub(r"(?<=/)[\w_]+", bot_username.lstrip('@'), m.group(1)),
+            text,
+            flags=re.IGNORECASE
+        )
 
     media = []
-    for idx, msg in enumerate(sorted(messages, key=lambda m: m.message_id)):
+    for idx, msg in enumerate(photos):
         if idx == 0:
             caption = msg.caption or ""
-
-            # Replace invite link with saved bot username
-            def replace_bot_link(match):
-                domain = match.group(1)
-                start_param = match.group(3)
-                return f"https://{domain}/{saved_bot}?start={start_param}"
-
-            pattern = r"https://(t\.me|telegram\.me|telegram\.dog)/([\w_]+)\?start=([^\s]+)"
-            updated_caption = re.sub(pattern, replace_bot_link, caption)
-
-            # Apply header and footer
+            updated_caption = replace_bot_links(caption)
+            updated_caption = re.sub(r"@\w+_bot\b", bot_username, updated_caption, flags=re.IGNORECASE)
             final_caption = f"{header}\n\n{updated_caption}\n\n{footer}".strip()
-
-            media.append(InputMediaPhoto(media=msg.photo.file_id, caption=final_caption, parse_mode=ParseMode.HTML))
+            media.append(InputMediaPhoto(media=msg.photo.file_id, caption=final_caption, parse_mode="html"))
         else:
             media.append(InputMediaPhoto(media=msg.photo.file_id))
 
-    await message.reply_media_group(media=media)
+    await message.reply_media_group(
+        media=media
+    )
 
-    # Send share button separately
-    await message.reply_text(
-        "Share this link:",
+    await message.reply(
+        "🔗 <b>Share this bot:</b>",
+        parse_mode="html",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔗 Share Link", url=f"https://telegram.me/share/url?url=https://t.me/{saved_bot}")]
+            [InlineKeyboardButton("Share Link", url=f"https://t.me/share/url?url={bot_username}")]
         ])
     )
 
