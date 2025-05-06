@@ -5,6 +5,11 @@ from aiohttp import web
 import asyncio
 import pyromod.listen
 from pyrogram import Client
+from pyrogram.types import InputMediaPhoto
+from pyrogram.handlers import MessageHandler
+from pyrogram import filters
+from collections import defaultdict
+import asyncio
 from pyrogram.enums import ParseMode
 import sys
 import pytz
@@ -105,3 +110,28 @@ async def start_command(client: Client, message: Message):
 
     return
 
+
+
+media_groups = defaultdict(list)
+
+@Bot.on_message(filters.private & filters.media_group)
+async def handle_album(client, message):
+    media_groups[message.media_group_id].append(message)
+
+    # Delay briefly to wait for all messages in the group
+    await asyncio.sleep(1.5)
+
+    messages = media_groups.pop(message.media_group_id, [])
+    media = []
+
+    for msg in sorted(messages, key=lambda m: m.message_id):
+        caption = msg.caption or ""
+        new_caption = f"@Javpostr\n\n{caption}" if caption else "@Javpostr"
+        if len(media) == 0:
+            # Only first media in group can have caption
+            media.append(InputMediaPhoto(media=msg.photo.file_id, caption=new_caption))
+        else:
+            media.append(InputMediaPhoto(media=msg.photo.file_id))
+
+    if media:
+        await message.reply_media_group(media=media)
