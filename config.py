@@ -11,7 +11,6 @@ APP_ID = int(os.environ.get("APP_ID", "22469064")) #Your API ID from my.telegram
 API_HASH = os.environ.get("API_HASH", "c05481978a217fdb11fa6774b15cba32") #Your API Hash from my.telegram.org
 #--------------------------------------------
 
-OWNER = os.environ.get("OWNER", "sewxiy") # Owner username without @
 OWNER_ID = int(os.environ.get("OWNER_ID", "7328629001")) # Owner id
 #--------------------------------------------
 PORT = os.environ.get("PORT", "8001")
@@ -30,7 +29,7 @@ START_MSG = os.environ.get("START_MESSAGE", "<b>ʜᴇʟʟᴏ {first}\n\n<blockqu
 #--------------------------------------------
 #--------------------------------------------
 
-LOG_FILE_NAME = "filesharingbot.txt"
+LOG_FILE_NAME = "postgenbot.txt"
 
 logging.basicConfig(
     level=logging.INFO,
