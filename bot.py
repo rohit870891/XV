@@ -3,6 +3,7 @@ import asyncio
 import pyromod.listen
 from pyrogram import Client, filters
 from pyrogram.types import InputMediaPhoto, Message
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram.enums import ParseMode
 from collections import defaultdict
 from datetime import datetime
@@ -75,9 +76,14 @@ class Bot(Client):
 # Create bot instance
 app = Bot()
 
+
 # Start command
 @app.on_message(filters.command('start') & filters.private)
 async def start_command(client: Client, message: Message):
+    keyboard = InlineKeyboardMarkup(
+        [[InlineKeyboardButton("Contact Developer", url="https://telegram.dog/rohit_1888")]]
+    )
+
     await message.reply_photo(
         photo=START_PIC,
         caption=START_MSG.format(
@@ -87,7 +93,7 @@ async def start_command(client: Client, message: Message):
             mention=message.from_user.mention,
             id=message.from_user.id
         ),
-        reply_markup=reply_markup
+        reply_markup=keyboard
     )
 
 # Handle media group (album)
