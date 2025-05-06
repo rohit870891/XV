@@ -134,7 +134,7 @@ async def handle_album(client, message):
             updated_caption = replace_bot_links(caption)
             updated_caption = re.sub(r"@\w+_bot\b", bot_username, updated_caption, flags=re.IGNORECASE)
             final_caption = f"{header}\n\n{updated_caption}\n\n{footer}".strip()
-            media.append(InputMediaPhoto(media=msg.photo.file_id, caption=final_caption, parse_mode="html"))
+            media.append(InputMediaPhoto(media=msg.photo.file_id, caption=final_caption, parse_mode=ParseMode.HTML))
         else:
             media.append(InputMediaPhoto(media=msg.photo.file_id))
 
