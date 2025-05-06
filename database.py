@@ -1,10 +1,8 @@
-#rohit_1888
+# rohit_1888
 
-import logging 
-import motor, asyncio
+import logging
 import motor.motor_asyncio
 from config import DB_URI, DB_NAME
-
 
 
 class Rohit:
@@ -86,7 +84,32 @@ class Rohit:
         user = await self.bot_data.find_one({"_id": user_id})
         return user.get("bot", {}).get("username", "") if user else ""
 
+    # Delete bot username
+    async def del_bot(self, user_id: int):
+        try:
+            result = await self.bot_data.delete_one({"_id": user_id})
+            return result.deleted_count > 0
+        except Exception as e:
+            logging.error(f"Error deleting bot for user {user_id}: {e}")
+            return False
+
+    # Delete header
+    async def del_header(self, user_id: int):
+        try:
+            result = await self.header_data.delete_one({"_id": user_id})
+            return result.deleted_count > 0
+        except Exception as e:
+            logging.error(f"Error deleting header for user {user_id}: {e}")
+            return False
+
+    # Delete footer
+    async def del_footer(self, user_id: int):
+        try:
+            result = await self.footer_data.delete_one({"_id": user_id})
+            return result.deleted_count > 0
+        except Exception as e:
+            logging.error(f"Error deleting footer for user {user_id}: {e}")
+            return False
+
 
 db = Rohit(DB_URI, DB_NAME)
-
-
