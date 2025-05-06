@@ -169,13 +169,8 @@ async def handle_single_photo(client, message):
     await message.reply_photo(
         photo=message.photo.file_id,
         caption=full_caption,
-        parse_mode=ParseMode.HTML,
-        reply_markup=None)
-        #reply_markup=InlineKeyboardMarkup([
-            #[InlineKeyboardButton("🔗 Share Link", #url=f"https://telegram.me/share/url?url=https://t.me/{saved_bot}")]
-        #])
-    #)
-
+        parse_mode=None  # Disable parsing to preserve raw text
+    )
 
 # /set_bot - Ask for bot username and save it
 @app.on_message(filters.command("set_bot") & filters.private)
