@@ -83,10 +83,6 @@ class Bot(Client):
             loop.run_until_complete(self.stop())
 
 
-if __name__ == "__main__":
-    Bot().run()
-
-
 @Bot.on_message(filters.command('start') & filters.private)
 async def start_command(client: Client, message: Message):
     user_id = message.from_user.id
@@ -132,3 +128,7 @@ async def handle_album(client, message):
 
     if media:
         await message.reply_media_group(media=media)
+
+
+if __name__ == "__main__":
+    Bot().run()
