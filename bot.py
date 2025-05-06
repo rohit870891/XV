@@ -96,26 +96,22 @@ async def start_command(client: Client, message: Message):
         reply_markup=keyboard
     )
 
-# Handle media group (album)
-media_groups = defaultdict(list)
-
 @app.on_message(filters.private & filters.media_group)
-async def handle_album(client: Client, message: Message):
+async def handle_album(client, message):
     media_groups[message.media_group_id].append(message)
-    await asyncio.sleep(1.5)  # allow time for all media in group
 
-    messages = media_groups.pop(message.media_group_id, [])
+    await asyncio.sleep(1.5)
+
+    messages = [msg for msg in media_groups.pop(message.media_group_id, []) if hasattr(msg, "message_id")]
     media = []
-    added_caption = False
 
     for msg in sorted(messages, key=lambda m: m.message_id):
-        if msg.caption:
-            caption = f"@Javpostr\n\n{msg.caption}"
-            if not added_caption:
-                media.append(InputMediaPhoto(media=msg.photo.file_id, caption=caption))
-                added_caption = True
-            else:
-                media.append(InputMediaPhoto(media=msg.photo.file_id))
+        if not msg.photo:
+            continue  # Skip non-photo items
+        caption = msg.caption or ""
+        new_caption = f"@Javpostr\n\n{caption}" if caption else "@Javpostr"
+        if len(media) == 0:
+            media.append(InputMediaPhoto(media=msg.photo.file_id, caption=new_caption))
         else:
             media.append(InputMediaPhoto(media=msg.photo.file_id))
 
