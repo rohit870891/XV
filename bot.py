@@ -144,7 +144,7 @@ async def handle_album(client, message):
 
     await message.reply(
         "🔗 <b>Share this bot:</b>",
-        parse_mode="html",
+        parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("Share Link", url=f"https://t.me/share/url?url={bot_username}")]
         ])
