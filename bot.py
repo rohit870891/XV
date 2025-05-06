@@ -99,27 +99,61 @@ async def start_command(client: Client, message: Message):
 
 media_groups = defaultdict(list)
 
-@app.on_message(filters.private & filters.media_group)
+@Bot.on_message(filters.private & filters.media_group)
 async def handle_album(client, message):
     media_groups[message.media_group_id].append(message)
-
     await asyncio.sleep(1.5)
 
-    messages = [msg for msg in media_groups.pop(message.media_group_id, []) if hasattr(msg, "message_id")]
-    media = []
+    messages = [msg for msg in media_groups.pop(message.media_group_id, []) if hasattr(msg, "message_id") and msg.photo]
+    if not messages:
+        return
 
-    for msg in sorted(messages, key=lambda m: m.message_id):
-        if not msg.photo:
-            continue  # Skip non-photo items
-        caption = msg.caption or ""
-        new_caption = f"@Javpostr\n\n{caption}" if caption else "@Javpostr"
-        if len(media) == 0:
-            media.append(InputMediaPhoto(media=msg.photo.file_id, caption=new_caption))
+    user_id = message.from_user.id
+    header = await db.get_header(user_id) or ""
+    footer = await db.get_footer(user_id) or ""
+    
+    link = "https://example.com/your-original-link"
+    new_link = "https://example.com/your-new-link"
+
+    media = []
+    for idx, msg in enumerate(sorted(messages, key=lambda m: m.message_id)):
+        if idx == 0:
+            if msg.caption:
+                updated_caption = f"{header}\n\n{msg.caption.replace(link, new_link)}\n\n{footer}"
+            else:
+                updated_caption = f"{header}\n\n<b>Your content has been processed successfully:</b>\n{new_link}\n\n{footer}"
+
+            media.append(InputMediaPhoto(media=msg.photo.file_id, caption=updated_caption, parse_mode=ParseMode.HTML))
         else:
             media.append(InputMediaPhoto(media=msg.photo.file_id))
 
-    if media:
-        await message.reply_media_group(media=media)
+    await message.reply_media_group(media=media, reply_markup=InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔗 Share Link", url=f"https://telegram.me/share/url?url={new_link}")]
+    ]))
+
+
+@Bot.on_message(filters.private & filters.photo & ~filters.media_group)
+async def handle_single_photo(client, message):
+    user_id = message.from_user.id
+    header = await db.get_header(user_id) or ""
+    footer = await db.get_footer(user_id) or ""
+    
+    link = "https://example.com/your-original-link"
+    new_link = "https://example.com/your-new-link"
+
+    if message.caption:
+        updated_caption = f"{header}\n\n{message.caption.replace(link, new_link)}\n\n{footer}"
+    else:
+        updated_caption = f"{header}\n\n<b>Your content has been processed successfully:</b>\n{new_link}\n\n{footer}"
+
+    await message.reply_photo(
+        photo=message.photo.file_id,
+        caption=updated_caption,
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔗 Share Link", url=f"https://telegram.me/share/url?url={new_link}")]
+        ])
+    )
 
 # Start bot
 if __name__ == "__main__":
