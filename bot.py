@@ -145,14 +145,6 @@ async def handle_album(client, message):
 
     await message.reply_media_group(media=media)
 
-    await message.reply(
-        "🔗 <b>Share this bot:</b>",
-        parse_mode=ParseMode.HTML,
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("Share Link", url=f"https://t.me/share/url?url=https://t.me/{saved_bot}")]
-        ])
-    )
-
 
 @app.on_message(filters.private & filters.photo & ~filters.media_group)
 async def handle_single_photo(client, message):
@@ -178,10 +170,11 @@ async def handle_single_photo(client, message):
         photo=message.photo.file_id,
         caption=full_caption,
         parse_mode=ParseMode.HTML,
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔗 Share Link", url=f"https://telegram.me/share/url?url=https://t.me/{saved_bot}")]
-        ])
-    )
+        reply_markup=None)
+        #reply_markup=InlineKeyboardMarkup([
+            #[InlineKeyboardButton("🔗 Share Link", #url=f"https://telegram.me/share/url?url=https://t.me/{saved_bot}")]
+        #])
+    #)
 
 
 # /set_bot - Ask for bot username and save it
