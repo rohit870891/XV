@@ -135,16 +135,36 @@ async def handle_album(client, message):
 @app.on_message(filters.private & filters.photo & ~filters.media_group)
 async def handle_single_photo(client, message):
     user_id = message.from_user.id
+
+    # Extract t.me bot link from text or caption
+    link = None
+    if "https://t.me/" in (message.text or ""):
+        link = next((word for word in message.text.split() if "https://t.me/" in word and "?start=" in word), None)
+    elif "https://t.me/" in (message.caption or ""):
+        link = next((word for word in message.caption.split() if "https://t.me/" in word and "?start=" in word), None)
+
+    if link:
+        try:
+            bot_username = link.split("?start=")[0].split("/")[-1]
+            bot_username = f"@{bot_username}"
+        except Exception:
+            bot_username = await db.get_bot(user_id) or f"@{client.me.username}"
+    else:
+        bot_username = await db.get_bot(user_id) or f"@{client.me.username}"
+
     header = await db.get_header(user_id) or ""
     footer = await db.get_footer(user_id) or ""
-    bot_username = await db.get_bot(user_id) or f"@{client.me.username}"
 
+    # Build updated caption
     if message.caption:
+        # Replace any @xxx_bot or full https://t.me/xxx?start= links
         updated_caption = re.sub(r"@\w+_bot\b", bot_username, message.caption, flags=re.IGNORECASE)
-        updated_caption = f"{header}\n\n{updated_caption}\n\n{footer}"
+        updated_caption = re.sub(r"https://t\.me/\w+\?start=\w+", bot_username, updated_caption, flags=re.IGNORECASE)
+        updated_caption = f"{header}\n\n{updated_caption}\n\n{footer}".strip()
     else:
-        updated_caption = f"{header}\n\n<b>Your content has been processed successfully:</b>\n{bot_username}\n\n{footer}"
+        updated_caption = f"{header}\n\n<b>Your content has been processed successfully:</b>\n{bot_username}\n\n{footer}".strip()
 
+    # Send the updated photo with caption
     await message.reply_photo(
         photo=message.photo.file_id,
         caption=updated_caption,
@@ -153,6 +173,7 @@ async def handle_single_photo(client, message):
             [InlineKeyboardButton("🔗 Share Link", url=f"https://telegram.me/share/url?url={bot_username}")]
         ])
     )
+
 
 # /set_bot - Ask for bot username and save it
 @app.on_message(filters.command("set_bot") & filters.private)
