@@ -108,7 +108,7 @@ async def handle_album(client, message):
     if not messages:
         return
 
-    messages = sorted(messages, key=lambda m: m.message_id)
+    messages = sorted(messages, key=lambda m: m.id)
     photos = [msg for msg in messages if msg.photo]
     if not photos:
         return
