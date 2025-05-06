@@ -111,25 +111,38 @@ async def handle_album(client, message):
     user_id = message.from_user.id
     header = await db.get_header(user_id) or ""
     footer = await db.get_footer(user_id) or ""
-    bot_username = await db.get_bot(user_id) or f"@{client.me.username}"
+    saved_bot = await db.get_bot(user_id) or f"{client.me.username}"
 
     media = []
     for idx, msg in enumerate(sorted(messages, key=lambda m: m.message_id)):
         if idx == 0:
-            if msg.caption:
-                # Replace all bot usernames with your bot's username
-                updated_caption = re.sub(r"@\w+_bot\b", bot_username, msg.caption, flags=re.IGNORECASE)
-                updated_caption = f"{header}\n\n{updated_caption}\n\n{footer}"
-            else:
-                updated_caption = f"{header}\n\n<b>Your content has been processed successfully:</b>\n{bot_username}\n\n{footer}"
+            caption = msg.caption or ""
 
-            media.append(InputMediaPhoto(media=msg.photo.file_id, caption=updated_caption, parse_mode=ParseMode.HTML))
+            # Replace invite link with saved bot username
+            def replace_bot_link(match):
+                domain = match.group(1)
+                start_param = match.group(3)
+                return f"https://{domain}/{saved_bot}?start={start_param}"
+
+            pattern = r"https://(t\.me|telegram\.me|telegram\.dog)/([\w_]+)\?start=([^\s]+)"
+            updated_caption = re.sub(pattern, replace_bot_link, caption)
+
+            # Apply header and footer
+            final_caption = f"{header}\n\n{updated_caption}\n\n{footer}".strip()
+
+            media.append(InputMediaPhoto(media=msg.photo.file_id, caption=final_caption, parse_mode=ParseMode.HTML))
         else:
             media.append(InputMediaPhoto(media=msg.photo.file_id))
 
-    await message.reply_media_group(media=media, reply_markup=InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔗 Share Link", url=f"https://telegram.me/share/url?url={bot_username}")]
-    ]))
+    await message.reply_media_group(media=media)
+
+    # Send share button separately
+    await message.reply_text(
+        "Share this link:",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔗 Share Link", url=f"https://telegram.me/share/url?url=https://t.me/{saved_bot}")]
+        ])
+    )
 
 
 @app.on_message(filters.private & filters.photo & ~filters.media_group)
