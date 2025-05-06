@@ -199,7 +199,7 @@ async def see_header_cmd(client, message: Message):
 
 # /set_footer - Ask for footer text and save it
 @app.on_message(filters.command("set_footer") & filters.private)
-async def set_header_cmd(client, message: Message):
+async def set_footer_cmd(client, message: Message):
     await message.reply("Please send the new footer text:")
     response = await client.listen(message.chat.id)
     footer_text = response.text.strip()
@@ -211,12 +211,12 @@ async def set_header_cmd(client, message: Message):
 
 # /see_footer - Retrieve saved footer
 @app.on_message(filters.command("see_footer") & filters.private)
-async def see_header_cmd(client, message: Message):
+async def see_footer_cmd(client, message: Message):
     footer_text = await db.get_footer(message.from_user.id)
     if footer_text:
         await message.reply(f"Your current footer:\n\n{footer_text}")
     else:
-        await message.reply("No footer found. Use /set_header to save one.")
+        await message.reply("No footer found. Use /set_footer to save one.")
 
 # Start bot
 if __name__ == "__main__":
