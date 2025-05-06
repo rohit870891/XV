@@ -1,13 +1,92 @@
 #rohit_1888
 
-
+import logging 
 import motor, asyncio
 import motor.motor_asyncio
 from config import DB_URI, DB_NAME
 
-dbclient = motor.motor_asyncio.AsyncIOMotorClient(DB_URI)
-database = dbclient[DB_NAME]
 
 
+class Rohit:
+
+    def __init__(self, DB_URI, DB_NAME):
+        self.dbclient = motor.motor_asyncio.AsyncIOMotorClient(DB_URI)
+        self.database = self.dbclient[DB_NAME]
+
+        self.header_data = self.database['header']
+        self.footer_data = self.database['footer']
+        self.bot_data = self.database['bot']
+
+    # Set Header
+    async def set_header(self, user_id: int, header_text: str):
+        try:
+            result = await self.header_data.update_one(
+                {"_id": user_id},
+                {
+                    "$set": {
+                        "header.text": header_text,
+                        "header.active": True
+                    }
+                },
+                upsert=True
+            )
+            return result.modified_count > 0 or result.upserted_id is not None
+        except Exception as e:
+            logging.error(f"Error setting header for user {user_id}: {e}")
+            return False
+
+    # Get Header
+    async def get_header(self, user_id: int):
+        user = await self.header_data.find_one({"_id": user_id})
+        return user.get("header", {}).get("text", "") if user else ""
+
+    # Set Footer
+    async def set_footer(self, user_id: int, footer_text: str):
+        try:
+            result = await self.footer_data.update_one(
+                {"_id": user_id},
+                {
+                    "$set": {
+                        "footer.text": footer_text,
+                        "footer.active": True
+                    }
+                },
+                upsert=True
+            )
+            return result.modified_count > 0 or result.upserted_id is not None
+        except Exception as e:
+            logging.error(f"Error setting footer for user {user_id}: {e}")
+            return False
+
+    # Get Footer
+    async def get_footer(self, user_id: int):
+        user = await self.footer_data.find_one({"_id": user_id})
+        return user.get("footer", {}).get("text", "") if user else ""
+
+    # Set Bot Username
+    async def set_bot(self, user_id: int, bot_username: str):
+        try:
+            result = await self.bot_data.update_one(
+                {"_id": user_id},
+                {
+                    "$set": {
+                        "bot.username": bot_username,
+                        "bot.active": True
+                    }
+                },
+                upsert=True
+            )
+            return result.modified_count > 0 or result.upserted_id is not None
+        except Exception as e:
+            logging.error(f"Error setting bot username for user {user_id}: {e}")
+            return False
+
+    # Get Bot Username
+    async def get_bot(self, user_id: int):
+        user = await self.bot_data.find_one({"_id": user_id})
+        return user.get("bot", {}).get("username", "") if user else ""
+
+
+db = Rohit(DB_URI, DB_NAME)
 
 
