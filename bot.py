@@ -1,5 +1,5 @@
 from aiohttp import web
-import asyncio
+import asyncio, re
 import pyromod.listen
 from pyrogram import Client, filters
 from pyrogram.types import InputMediaPhoto, Message
@@ -111,24 +111,24 @@ async def handle_album(client, message):
     user_id = message.from_user.id
     header = await db.get_header(user_id) or ""
     footer = await db.get_footer(user_id) or ""
-    
-    link = "https://example.com/your-original-link"
-    new_link = "https://example.com/your-new-link"
+    bot_username = await db.get_bot(user_id) or f"@{client.me.username}"
 
     media = []
     for idx, msg in enumerate(sorted(messages, key=lambda m: m.message_id)):
         if idx == 0:
             if msg.caption:
-                updated_caption = f"{header}\n\n{msg.caption.replace(link, new_link)}\n\n{footer}"
+                # Replace all bot usernames with your bot's username
+                updated_caption = re.sub(r"@\w+_bot\b", bot_username, msg.caption, flags=re.IGNORECASE)
+                updated_caption = f"{header}\n\n{updated_caption}\n\n{footer}"
             else:
-                updated_caption = f"{header}\n\n<b>Your content has been processed successfully:</b>\n{new_link}\n\n{footer}"
+                updated_caption = f"{header}\n\n<b>Your content has been processed successfully:</b>\n{bot_username}\n\n{footer}"
 
             media.append(InputMediaPhoto(media=msg.photo.file_id, caption=updated_caption, parse_mode=ParseMode.HTML))
         else:
             media.append(InputMediaPhoto(media=msg.photo.file_id))
 
     await message.reply_media_group(media=media, reply_markup=InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔗 Share Link", url=f"https://telegram.me/share/url?url={new_link}")]
+        [InlineKeyboardButton("🔗 Share Link", url=f"https://telegram.me/share/url?url={bot_username}")]
     ]))
 
 
@@ -137,23 +137,25 @@ async def handle_single_photo(client, message):
     user_id = message.from_user.id
     header = await db.get_header(user_id) or ""
     footer = await db.get_footer(user_id) or ""
-    
-    link = "https://example.com/your-original-link"
-    new_link = "https://example.com/your-new-link"
+    bot_username = await db.get_bot(user_id) or f"@{client.me.username}"
 
     if message.caption:
-        updated_caption = f"{header}\n\n{message.caption.replace(link, new_link)}\n\n{footer}"
+        updated_caption = re.sub(r"@\w+_bot\b", bot_username, message.caption, flags=re.IGNORECASE)
+        updated_caption = f"{header}\n\n{updated_caption}\n\n{footer}"
     else:
-        updated_caption = f"{header}\n\n<b>Your content has been processed successfully:</b>\n{new_link}\n\n{footer}"
+        updated_caption = f"{header}\n\n<b>Your content has been processed successfully:</b>\n{bot_username}\n\n{footer}"
 
     await message.reply_photo(
         photo=message.photo.file_id,
         caption=updated_caption,
         parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔗 Share Link", url=f"https://telegram.me/share/url?url={new_link}")]
+            [InlineKeyboardButton("🔗 Share Link", url=f"https://telegram.me/share/url?url={bot_username}")]
         ])
     )
+
+
+
 
 # Start bot
 if __name__ == "__main__":
