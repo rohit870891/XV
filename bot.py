@@ -218,6 +218,35 @@ async def see_footer_cmd(client, message: Message):
     else:
         await message.reply("No footer found. Use /set_footer to save one.")
 
+# /del_bot - Delete saved bot username
+@app.on_message(filters.command("del_bot") & filters.private)
+async def del_bot_cmd(client, message: Message):
+    success = await db.del_bot(message.from_user.id)
+    if success:
+        await message.reply("Bot username has been deleted.")
+    else:
+        await message.reply("No bot username was set.")
+
+# /del_header - Delete saved header
+@app.on_message(filters.command("del_header") & filters.private)
+async def del_header_cmd(client, message: Message):
+    success = await db.del_header(message.from_user.id)
+    if success:
+        await message.reply("Header text has been deleted.")
+    else:
+        await message.reply("No header was set.")
+
+# /del_footer - Delete saved footer
+@app.on_message(filters.command("del_footer") & filters.private)
+async def del_footer_cmd(client, message: Message):
+    success = await db.del_footer(message.from_user.id)
+    if success:
+        await message.reply("Footer text has been deleted.")
+    else:
+        await message.reply("No footer was set.")
+
+
+
 # Start bot
 if __name__ == "__main__":
     app.run()
