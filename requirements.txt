@@ -1,0 +1,18 @@
+https://codeload.github.com/KurimuzonAkuma/pyrogram/zip/refs/heads/dev
+pyrofork==2.3.45 
+#pyrogram
+TgCrypto
+pyromod==1.5
+# --- For-Database ------------ #
+pymongo
+motor
+dnspython
+# --- For-Web-Response ------- #
+aiohttp
+python-dotenv
+# --- For-Web-Response ------- #
+pytz
+requests
+bs4
+aiofiles
+asyncio
