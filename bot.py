@@ -12,6 +12,7 @@ import sys
 import pytz
 import aiohttp
 from bs4 import BeautifulSoup
+from PIL import Image
 
 # Custom config and database imports
 from config import *
@@ -115,7 +116,6 @@ async def inline_search(client: Client, inline_query):
 
     await inline_query.answer(results, cache_time=1)
 
-
 async def search_nhentai(query):
     url = f"https://nhentai.net/search/?q={query.replace(' ', '+')}"
     results = []
@@ -130,11 +130,15 @@ async def search_nhentai(query):
     soup = BeautifulSoup(html, "html.parser")
     gallery_items = soup.select(".gallery")
 
-    for i, item in enumerate(gallery_items[:10]):  # Limit to 10 results
+    for i, item in enumerate(gallery_items[:10]):  # 10 results max
         title = item.select_one(".caption").text.strip()
         code = item['href'].split('/')[2]
         thumb = item.select_one("img").get("data-src") or item.select_one("img").get("src")
         page_url = f"https://nhentai.net/g/{code}/"
+
+        button = InlineKeyboardMarkup(
+            [[InlineKeyboardButton("📥 Download PDF", callback_data=f"download_{code}")]]
+        )
 
         results.append(
             InlineQueryResultArticle(
@@ -144,12 +148,73 @@ async def search_nhentai(query):
                 input_message_content=InputTextMessageContent(
                     message_text=f"**{title}**\n🔗 [Read Now]({page_url})\n`Code:` {code}",
                     disable_web_page_preview=False
-                )
+                ),
+                reply_markup=button
             )
         )
 
     return results
 
+
+async def download_manga_as_pdf(code, progress_callback=None):
+    base_url = f"https://nhentai.net/g/{code}/"
+    folder = f"nhentai_{code}"
+    os.makedirs(folder, exist_ok=True)
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(base_url) as response:
+            html = await response.text()
+
+    soup = BeautifulSoup(html, "html.parser")
+    thumbnails = soup.select(".thumb-container img")
+
+    images = []
+    for i, img in enumerate(thumbnails):
+        src = img.get("data-src") or img.get("src")
+        src = src.replace("t.jpg", ".jpg").replace("t.png", ".png")
+        if src.startswith("//"):
+            src = "https:" + src
+
+        filename = os.path.join(folder, f"{i+1:03}.jpg")
+        await download_image(session, src, filename)
+
+        if progress_callback:
+            await progress_callback(i + 1, len(thumbnails), "Downloading")
+
+        images.append(filename)
+
+    # Convert to PDF
+    image_objs = [Image.open(img).convert("RGB") for img in images]
+    pdf_path = f"{folder}.pdf"
+    image_objs[0].save(pdf_path, save_all=True, append_images=image_objs[1:])
+
+    # Cleanup
+    for img in images:
+        os.remove(img)
+    os.rmdir(folder)
+
+    return pdf_path
+
+
+@app.on_callback_query(filters.regex(r"^download_(\d+)$"))
+async def handle_download_button(client: Client, callback_query):
+    code = callback_query.matches[0].group(1)
+    chat_id = callback_query.message.chat.id
+    msg = await callback_query.message.reply(f"📥 Starting download for `{code}`...", quote=True)
+
+    async def progress(current, total, stage):
+        percent = int((current / total) * 100)
+        await msg.edit(f"{stage}... {percent}%")
+
+    try:
+        pdf_path = await download_manga_as_pdf(code, progress)
+        await msg.edit("📤 Uploading PDF...")
+        await client.send_document(chat_id, document=pdf_path, caption=f"📖 Manga: {code}")
+    except Exception as e:
+        await msg.edit(f"❌ Failed: {e}")
+    finally:
+        if os.path.exists(pdf_path):
+            os.remove(pdf_path)
 
 # Start bot
 if __name__ == "__main__":
