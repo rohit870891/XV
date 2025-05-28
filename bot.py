@@ -152,32 +152,51 @@ async def search_nhentai(query):
     return results
 
 # ---------------- DOWNLOAD PDF ---------------- #
+
 async def download_manga_as_pdf(code, progress_callback=None):
-    base_url = f"https://nhentai.net/g/{code}/"
+    gallery_url = f"https://nhentai.net/g/{code}/"
     folder = f"nhentai_{code}"
     os.makedirs(folder, exist_ok=True)
 
     async with aiohttp.ClientSession() as session:
-        async with session.get(base_url) as response:
+        async with session.get(gallery_url) as response:
             html = await response.text()
 
         soup = BeautifulSoup(html, "html.parser")
-        thumbnails = soup.select(".thumb-container img")
+
+        # Step 1: Get gallery ID from page
+        match = re.search(r"gallery\/(\d+)", html)
+        if not match:
+            raise Exception("Could not extract gallery ID.")
+        gallery_id = match.group(1)
+
+        # Step 2: Count number of pages
+        num_pages = len(soup.select(".thumb-container"))
+
+        # Step 3: Determine file extension types (webp/jpg/png)
+        ext_list = []
+        for img_tag in soup.select(".thumb-container img"):
+            src = img_tag.get("data-src") or img_tag.get("src")
+            ext = ".jpg"
+            if "png" in src:
+                ext = ".png"
+            elif "webp" in src:
+                ext = ".webp"
+            ext_list.append(ext)
 
         images = []
-        for i, img in enumerate(thumbnails):
-            src = img.get("data-src") or img.get("src")
-            src = src.replace("t.jpg", ".jpg").replace("t.png", ".png")
-            if src.startswith("//"):
-                src = "https:" + src
+        for i in range(num_pages):
+            page_num = i + 1
+            ext = ext_list[i] if i < len(ext_list) else ".jpg"
+            image_url = f"https://i.nhentai.net/galleries/{gallery_id}/{page_num}{ext}"
 
-            filename = os.path.join(folder, f"{i+1:03}.jpg")
-            async with session.get(src) as img_resp:
+            filename = os.path.join(folder, f"{page_num:03}{ext}")
+            async with session.get(image_url) as img_resp:
                 with open(filename, 'wb') as f:
                     f.write(await img_resp.read())
 
             if progress_callback:
-                await progress_callback(i + 1, len(thumbnails), "Downloading")
+                await progress_callback(page_num, num_pages, "Downloading")
 
             images.append(filename)
 
