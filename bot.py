@@ -238,7 +238,7 @@ async def handle_download_button(client: Client, callback_query):
             os.remove(pdf_path)
 
 #-------------------------------------------#
-@app.on_message(filters.command("update") & filters.user(ADMINS))
+@app.on_message(filters.command("update") & filters.user(OWNER_ID))
 async def update_bot(client, message):
     #if message.from_user.id not OWNER_ID:
         #return await message.reply_text("You are not authorized to update the bot.")
