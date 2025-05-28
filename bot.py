@@ -17,6 +17,9 @@ from io import BytesIO
 import tempfile
 import asyncio
 import aiohttp
+import libtorrent as lt
+import time
+import cloudscraper
 from pyrogram.types import (
     InlineQueryResultArticle,
     InputTextMessageContent,
@@ -29,6 +32,125 @@ from pyrogram.types import CallbackQuery
 from config import *
 from database import *
 import subprocess 
+
+USERNAME = "shukla89"
+PASSWORD = "shukla89"
+
+# Login and create a scraper session
+def get_authenticated_session():
+    scraper = cloudscraper.create_scraper()
+    login_url = "https://nhentai.net/login/"
+    # Step 1: Get login page and CSRF token
+    r = scraper.get(login_url)
+    if r.status_code != 200:
+        raise Exception("Cannot reach login page")
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(r.text, "html.parser")
+    token = soup.find("input", {"name":"csrfmiddlewaretoken"})["value"]
+    login_data = {
+        "username": USERNAME,
+        "password": PASSWORD,
+        "csrfmiddlewaretoken": token,
+        "next": "/",
+    }
+    headers = {
+        "Referer": login_url,
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0 Safari/537.36",
+    }
+    # Step 2: Post login form
+    resp = scraper.post(login_url, data=login_data, headers=headers)
+    if resp.status_code != 200 or "Logout" not in resp.text:
+        raise Exception("Login failed")
+    return scraper
+
+# Extract .torrent URL from gallery page
+def get_torrent_url(scraper, code):
+    gallery_url = f"https://nhentai.net/g/{code}/"
+    r = scraper.get(gallery_url)
+    if r.status_code != 200:
+        raise Exception("Gallery not found")
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(r.text, "html.parser")
+    download_btn = soup.find("a", {"class": "btn btn-primary btn-block btn-torrent"})
+    if not download_btn:
+        raise Exception("Download torrent button not found")
+    torrent_url = download_btn["href"]
+    if torrent_url.startswith("/"):
+        torrent_url = "https://nhentai.net" + torrent_url
+    return torrent_url
+
+# Download torrent file bytes
+def download_torrent(scraper, torrent_url):
+    r = scraper.get(torrent_url)
+    if r.status_code != 200:
+        raise Exception("Failed to download torrent file")
+    return r.content
+
+# Use libtorrent to get list of files from torrent bytes
+def get_files_from_torrent(torrent_bytes):
+    info = lt.torrent_info(lt.bdecode(torrent_bytes))
+    files = info.files()
+    file_list = []
+    for i in range(files.num_files()):
+        f = files.file_path(i)
+        file_list.append(f)
+    return file_list, info
+
+# Download files from torrent using libtorrent session (only metadata to get files URLs)
+async def download_images_from_torrent(info, session, temp_dir, status_callback=None):
+    params = {
+        "save_path": temp_dir,
+        "storage_mode": lt.storage_mode_t.storage_mode_allocate,
+        "ti": info,
+        "paused": False,
+        "auto_managed": True,
+        "duplicate_is_error": True
+    }
+    handle = session.add_torrent(params)
+    print("Downloading torrent metadata and files...")
+
+    while not handle.has_metadata():
+        await asyncio.sleep(1)
+    print("Metadata received, starting torrent download")
+
+    # Wait for torrent to finish or timeout (5 minutes)
+    start_time = time.time()
+    timeout = 300
+    while handle.status().state != lt.torrent_status.seeding:
+        s = handle.status()
+        progress = s.progress * 100
+        if status_callback:
+            await status_callback(progress)
+        if time.time() - start_time > timeout:
+            print("Timeout downloading torrent")
+            break
+        await asyncio.sleep(1)
+
+    print("Torrent download finished or timeout reached")
+
+# Convert all downloaded images to PDF
+def convert_images_to_pdf(image_folder, output_pdf_path):
+    files = sorted(
+        [os.path.join(image_folder, f) for f in os.listdir(image_folder)
+         if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
+    )
+    images = []
+    for f in files:
+        img = Image.open(f).convert("RGB")
+        images.append(img)
+    if not images:
+        raise Exception("No images found to convert")
+    images[0].save(output_pdf_path, save_all=True, append_images=images[1:])
+    return output_pdf_path
+
+# Async Telegram sending helpers
+async def send_progress_edit(message, text):
+    try:
+        await message.edit(text)
+    except:
+        pass
+
+
 
 # Web route setup
 routes = web.RouteTableDef()
@@ -115,16 +237,60 @@ async def start_command(client: Client, message: Message):
     )
 
 #---------------------
-@app.on_inline_query()
-async def inline_search(client: Client, inline_query):
-    query = inline_query.query.strip()
 
+
+@app.on_inline_query()
+async def inline_search(client, inline_query):
+    query = inline_query.query.strip()
     if not query:
         await inline_query.answer([], switch_pm_text="Type something to search", switch_pm_parameter="start")
         return
 
-    # Example logic for nhentai search (replace with actual scraper/API)
-    results = await search_nhentai(query)  # <-- You implement this function
+    scraper = cloudscraper.create_scraper()
+    search_url = f"https://nhentai.net/search/?q={query.replace(' ', '+')}"
+    resp = scraper.get(search_url)
+    if resp.status_code != 200:
+        await inline_query.answer([], switch_pm_text="Error contacting nhentai", switch_pm_parameter="start")
+        return
+
+    from bs4 import BeautifulSoup
+    soup = BeautifulSoup(resp.text, "html.parser")
+    results = []
+    gallery_items = soup.select(".gallery a.cover")
+    for i, item in enumerate(gallery_items[:10]):
+        title = item.get("title") or "No Title"
+        href = item.get("href")
+        code = href.strip("/").split("/")[-1]
+        img_tag = item.select_one("img")
+        thumb = img_tag.get("data-src") or img_tag.get("src")
+        if thumb.startswith("//"):
+            thumb = "https:" + thumb
+        page_url = f"https://nhentai.net/g/{code}/"
+
+        buttons = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("Read Online", url=page_url),
+                InlineKeyboardButton("Download PDF", callback_data=f"download:{code}:1")
+            ],
+            [
+                InlineKeyboardButton("◀️ Back", switch_inline_query_current_chat=""),  # Implement actual paging logic if needed
+                InlineKeyboardButton("Next ▶️", switch_inline_query_current_chat=query)
+            ]
+        ])
+
+        results.append(
+            InlineQueryResultArticle(
+                title=title,
+                description=f"Code: {code}",
+                thumb_url=thumb,
+                input_message_content=InputTextMessageContent(
+                    message_text=f"**{title}**\n🔗 [Read Online]({page_url})\n`Code:` {code}",
+                    # Use link_preview_options instead of disable_web_page_preview as warning suggests
+                    link_preview_options={}
+                ),
+                reply_markup=buttons
+            )
+        )
 
     await inline_query.answer(results, cache_time=1)
 
@@ -232,34 +398,53 @@ async def download_nhentai_as_pdf(code, status_msg, client):
 
 
 @app.on_callback_query()
-async def handle_download_button(client: Client, callback_query: CallbackQuery):
+async def handle_download_button(client, callback_query: CallbackQuery):
     data = callback_query.data
-    if not data.startswith("download_"):
+    if not data.startswith("download:"):
+        await callback_query.answer()
         return
+    _, code, page_str = data.split(":")
+    page = int(page_str)
+    await callback_query.answer(f"Downloading manga code {code} ...", show_alert=False)
 
-    code = data.split("_")[1]
-    user_id = callback_query.from_user.id
-
-    await callback_query.answer("⏳ Preparing your download...", show_alert=False)
-
-    # Send status message
-    status_message = await client.send_message(user_id, f"📥 Starting download for code `{code}`...")
+    status_msg = await callback_query.message.reply(f"⏳ Preparing to download `{code}`...")
 
     try:
-        pdf_path = await download_nhentai_as_pdf(code, status_message, client)
+        scraper = get_authenticated_session()
+        torrent_url = get_torrent_url(scraper, code)
+        torrent_bytes = download_torrent(scraper, torrent_url)
 
-        await status_message.edit("📤 Uploading PDF...")
+        # Save torrent bytes temporarily
+        temp_dir = tempfile.mkdtemp()
+        torrent_path = os.path.join(temp_dir, f"{code}.torrent")
+        with open(torrent_path, "wb") as f:
+            f.write(torrent_bytes)
 
-        await client.send_document(
-            chat_id=user_id,
-            document=pdf_path,
-            caption=f"📘 Download complete!\n🔗 https://nhentai.net/g/{code}/\n🆔 Code: `{code}`"
-        )
+        # Load torrent info
+        info = lt.torrent_info(torrent_path)
 
-        await status_message.delete()
+        # Setup libtorrent session
+        ses = lt.session()
+        ses.listen_on(6881, 6891)
+
+        # Download torrent files
+        async def progress_callback(progress):
+            await send_progress_edit(status_msg, f"📥 Download progress: {progress:.2f}%")
+
+        await download_images_from_torrent(info, ses, temp_dir, progress_callback)
+
+        # Convert images to PDF
+        pdf_path = os.path.join(temp_dir, f"{code}.pdf")
+        convert_images_to_pdf(temp_dir, pdf_path)
+
+        # Send PDF
+        await status_msg.edit("📤 Uploading PDF...")
+        await client.send_document(callback_query.message.chat.id, pdf_path, caption=f"Manga `{code}` downloaded as PDF.")
+
+        await status_msg.delete()
 
     except Exception as e:
-        await status_message.edit(f"❌ Failed to download `{code}`:\n`{e}`")
+        await status_msg.edit(f"❌ Failed to download `{code}`:\n`{e}`")
 
 #-------------------------------------------#
 @app.on_message(filters.command("update") & filters.user(OWNER_ID))
