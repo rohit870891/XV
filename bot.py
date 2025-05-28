@@ -122,16 +122,136 @@ async def start_command(client: Client, message: Message):
     )
 
 #---------------------
+@app.on_inline_query()
+async def inline_search(client: Client, inline_query):
+    query = inline_query.query.strip()
 
+    if not query:
+        await inline_query.answer([], switch_pm_text="Type a search term", switch_pm_parameter="start")
+        return
+
+    results = await search_nhentai(query)
+    await inline_query.answer(results, cache_time=1)
+
+
+#---------------------
+
+async def download_manga_as_pdf(code, progress_callback=None):
+    base_url = f"https://nhentai.net/g/{code}/"
+    folder = f"nhentai_{code}"
+    os.makedirs(folder, exist_ok=True)
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(base_url) as response:
+            html = await response.text()
+
+    soup = BeautifulSoup(html, "html.parser")
+    thumbnails = soup.select(".thumb-container img")
+
+    images = []
+    for i, img in enumerate(thumbnails):
+        src = img.get("data-src") or img.get("src")
+        src = src.replace("t.jpg", ".jpg").replace("t.png", ".png")
+        if src.startswith("//"):
+            src = "https:" + src
+
+        filename = os.path.join(folder, f"{i+1:03}.jpg")
+        await download_image(session, src, filename)
+
+        if progress_callback:
+            await progress_callback(i + 1, len(thumbnails), "Downloading")
+
+        images.append(filename)
+
+    # Convert to PDF
+    image_objs = [Image.open(img).convert("RGB") for img in images]
+    pdf_path = f"{folder}.pdf"
+    image_objs[0].save(pdf_path, save_all=True, append_images=image_objs[1:])
+
+    # Cleanup
+    for img in images:
+        os.remove(img)
+    os.rmdir(folder)
+
+    return pdf_path
 
 
 
 
 #-------------------------------
+@app.on_callback_query(filters.regex(r"^download_(\d+)$"))
+async def handle_download_button(client: Client, callback_query):
+    code = callback_query.matches[0].group(1)
+    chat_id = callback_query.message.chat.id
+    msg = await callback_query.message.reply(f"📥 Starting download for `{code}`...", quote=True)
 
+    async def progress(current, total, stage):
+        percent = int((current / total) * 100)
+        await msg.edit(f"{stage}... {percent}%")
+
+    try:
+        pdf_path = await download_manga_as_pdf(code, progress)
+        await msg.edit("📤 Uploading PDF...")
+        await client.send_document(chat_id, document=pdf_path, caption=f"📖 Manga: {code}")
+    except Exception as e:
+        await msg.edit(f"❌ Failed: {e}")
+    finally:
+        if os.path.exists(pdf_path):
+            os.remove(pdf_path)
 
 
 #-----------------------
+
+async def search_nhentai(query):
+    url = f"https://nhentai.xxx/search/?q={query.replace(' ', '+')}"
+    results = []
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as response:
+            if response.status != 200:
+                return []
+
+            html = await response.text()
+
+    soup = BeautifulSoup(html, "html.parser")
+    gallery_items = soup.select(".gallery")
+
+    for i, item in enumerate(gallery_items[:10]):  # Max 10 results
+        link_tag = item.select_one("a")
+        if not link_tag or "href" not in link_tag.attrs:
+            continue
+
+        href = link_tag["href"]  # e.g., /g/123456/
+        code = href.split("/")[2]
+
+        title_tag = item.select_one(".caption")
+        title = title_tag.text.strip() if title_tag else f"Code {code}"
+
+        img_tag = item.select_one("img")
+        thumb = img_tag.get("data-src") or img_tag.get("src") if img_tag else None
+        if thumb and thumb.startswith("//"):
+            thumb = "https:" + thumb
+
+        page_url = f"https://nhentai.net/g/{code}/"
+
+        button = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📥 Download PDF", callback_data=f"download_{code}")]
+        ])
+
+        results.append(
+            InlineQueryResultArticle(
+                title=title,
+                description=f"Code: {code}",
+                thumb_url=thumb,
+                input_message_content=InputTextMessageContent(
+                    message_text=f"**{title}**\n🔗 [Read Now]({page_url})\n`Code:` {code}",
+                    disable_web_page_preview=False
+                ),
+                reply_markup=button
+            )
+        )
+
+    return results
 
 #-------------------------------------------#
 @app.on_message(filters.command("update") & filters.user(OWNER_ID))
