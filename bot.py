@@ -13,6 +13,12 @@ import pytz
 import aiohttp
 from bs4 import BeautifulSoup
 from PIL import Image
+from pyrogram.types import (
+    InlineQueryResultArticle,
+    InputTextMessageContent,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton
+)
 
 # Custom config and database imports
 from config import *
@@ -102,7 +108,7 @@ async def start_command(client: Client, message: Message):
         reply_markup=keyboard
     )
 
-
+#---------------------
 @app.on_inline_query()
 async def inline_search(client: Client, inline_query):
     query = inline_query.query.strip()
@@ -116,6 +122,8 @@ async def inline_search(client: Client, inline_query):
 
     await inline_query.answer(results, cache_time=1)
 
+
+#-------------------------------
 async def search_nhentai(query):
     url = f"https://nhentai.net/search/?q={query.replace(' ', '+')}"
     results = []
@@ -130,15 +138,27 @@ async def search_nhentai(query):
     soup = BeautifulSoup(html, "html.parser")
     gallery_items = soup.select(".gallery")
 
-    for i, item in enumerate(gallery_items[:10]):  # 10 results max
-        title = item.select_one(".caption").text.strip()
-        code = item['href'].split('/')[2]
-        thumb = item.select_one("img").get("data-src") or item.select_one("img").get("src")
+    for i, item in enumerate(gallery_items[:10]):  # Max 10 results
+        link_tag = item.select_one("a")
+        if not link_tag or "href" not in link_tag.attrs:
+            continue
+
+        href = link_tag["href"]  # e.g., /g/123456/
+        code = href.split("/")[2]
+
+        title_tag = item.select_one(".caption")
+        title = title_tag.text.strip() if title_tag else f"Code {code}"
+
+        img_tag = item.select_one("img")
+        thumb = img_tag.get("data-src") or img_tag.get("src") if img_tag else None
+        if thumb and thumb.startswith("//"):
+            thumb = "https:" + thumb
+
         page_url = f"https://nhentai.net/g/{code}/"
 
-        button = InlineKeyboardMarkup(
-            [[InlineKeyboardButton("📥 Download PDF", callback_data=f"download_{code}")]]
-        )
+        button = InlineKeyboardMarkup([
+            [InlineKeyboardButton("📥 Download PDF", callback_data=f"download_{code}")]
+        ])
 
         results.append(
             InlineQueryResultArticle(
