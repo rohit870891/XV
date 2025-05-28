@@ -186,10 +186,11 @@ async def download_manga_as_pdf(code, progress_callback=None):
         print(f"Gallery {code} has {num_pages} pages")
 
         images = []
+        ext_map = {"j": "jpg", "p": "png", "g": "gif", "w": "webp"}  # Added webp support
+
         for i, page in enumerate(data["images"]["pages"]):
             page_num = i + 1
             ext = page.get("t")
-            ext_map = {"j": "jpg", "p": "png", "g": "gif"}
             extension = ext_map.get(ext, "jpg")
 
             image_url = f"https://i.nhentai.net/galleries/{data['media_id']}/{page_num}.{extension}"
