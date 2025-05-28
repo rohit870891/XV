@@ -56,7 +56,7 @@ class Bot(Client):
         await web.TCPSite(app, "0.0.0.0", PORT).start()
 
         try:
-            await self.send_message(OWNER_ID, text="🤖 Bot Restarted Successfully")
+            await self.send_message(OWNER_ID, text="<b><blockquote> Bᴏᴛ Rᴇsᴛᴀʀᴛᴇᴅ by @Codeflix_Bots</blockquote></b>")
         except:
             pass
 
