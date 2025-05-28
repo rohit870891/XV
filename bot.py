@@ -10,15 +10,20 @@ from datetime import datetime
 import logging
 import sys
 import pytz
-import aiohttp
+import os
 from bs4 import BeautifulSoup
 from PIL import Image
+from io import BytesIO
+import tempfile
+import asyncio
+import aiohttp
 from pyrogram.types import (
     InlineQueryResultArticle,
     InputTextMessageContent,
     InlineKeyboardMarkup,
     InlineKeyboardButton
 )
+from pyrogram.types import CallbackQuery
 
 # Custom config and database imports
 from config import *
@@ -177,65 +182,84 @@ async def search_nhentai(query):
     return results
 
 
-async def download_manga_as_pdf(code, progress_callback=None):
+async def download_nhentai_as_pdf(code, status_msg, client):
     base_url = f"https://nhentai.net/g/{code}/"
-    folder = f"nhentai_{code}"
-    os.makedirs(folder, exist_ok=True)
+    headers = {"Referer": "https://nhentai.net"}
 
-    async with aiohttp.ClientSession() as session:
-        async with session.get(base_url) as response:
-            html = await response.text()
+    async with aiohttp.ClientSession(headers=headers) as session:
+        # Fetch gallery page
+        async with session.get(base_url) as resp:
+            if resp.status != 200:
+                raise Exception(f"Gallery not found. HTTP {resp.status}")
+            html = await resp.text()
 
-    soup = BeautifulSoup(html, "html.parser")
-    thumbnails = soup.select(".thumb-container img")
+        soup = BeautifulSoup(html, "html.parser")
+        img_tags = soup.select("#thumbnail-container img")
 
-    images = []
-    for i, img in enumerate(thumbnails):
-        src = img.get("data-src") or img.get("src")
-        src = src.replace("t.jpg", ".jpg").replace("t.png", ".png")
-        if src.startswith("//"):
-            src = "https:" + src
+        if not img_tags:
+            raise Exception("No images found.")
 
-        filename = os.path.join(folder, f"{i+1:03}.jpg")
-        await download_image(session, src, filename)
+        image_urls = []
+        for img in img_tags:
+            src = img.get("data-src") or img.get("src")
+            if src.startswith("//"):
+                src = "https:" + src
+            image_urls.append(src.replace("t.jpg", ".jpg").replace("t.png", ".png").replace("t.", "."))  # full-size
 
-        if progress_callback:
-            await progress_callback(i + 1, len(thumbnails), "Downloading")
+        total = len(image_urls)
+        images = []
 
-        images.append(filename)
+        await status_msg.edit(f"📥 Found {total} pages. Downloading images...")
 
-    # Convert to PDF
-    image_objs = [Image.open(img).convert("RGB") for img in images]
-    pdf_path = f"{folder}.pdf"
-    image_objs[0].save(pdf_path, save_all=True, append_images=image_objs[1:])
+        for i, img_url in enumerate(image_urls, start=1):
+            async with session.get(img_url) as img_resp:
+                if img_resp.status != 200:
+                    raise Exception(f"Image {i} failed")
+                img_bytes = await img_resp.read()
 
-    # Cleanup
-    for img in images:
-        os.remove(img)
-    os.rmdir(folder)
+            image = Image.open(BytesIO(img_bytes)).convert("RGB")
+            images.append(image)
+
+            if i % 5 == 0 or i == total:
+                await status_msg.edit(f"📥 Downloading... {i}/{total} pages")
+
+    # Save PDF
+    temp_dir = tempfile.mkdtemp()
+    pdf_path = os.path.join(temp_dir, f"{code}.pdf")
+    images[0].save(pdf_path, save_all=True, append_images=images[1:])
 
     return pdf_path
 
 
-@app.on_callback_query(filters.regex(r"^download_(\d+)$"))
-async def handle_download_button(client: Client, callback_query):
-    code = callback_query.matches[0].group(1)
-    chat_id = callback_query.message.chat.id
-    msg = await callback_query.message.reply(f"📥 Starting download for `{code}`...", quote=True)
+@app.on_callback_query()
+async def handle_download_button(client: Client, callback_query: CallbackQuery):
+    data = callback_query.data
+    if not data.startswith("download_"):
+        return
 
-    async def progress(current, total, stage):
-        percent = int((current / total) * 100)
-        await msg.edit(f"{stage}... {percent}%")
+    code = data.split("_")[1]
+    user_id = callback_query.from_user.id
+
+    await callback_query.answer("⏳ Preparing your download...", show_alert=False)
+
+    # Send status message
+    status_message = await client.send_message(user_id, f"📥 Starting download for code `{code}`...")
 
     try:
-        pdf_path = await download_manga_as_pdf(code, progress)
-        await msg.edit("📤 Uploading PDF...")
-        await client.send_document(chat_id, document=pdf_path, caption=f"📖 Manga: {code}")
+        pdf_path = await download_nhentai_as_pdf(code, status_message, client)
+
+        await status_message.edit("📤 Uploading PDF...")
+
+        await client.send_document(
+            chat_id=user_id,
+            document=pdf_path,
+            caption=f"📘 Download complete!\n🔗 https://nhentai.net/g/{code}/\n🆔 Code: `{code}`"
+        )
+
+        await status_message.delete()
+
     except Exception as e:
-        await msg.edit(f"❌ Failed: {e}")
-    finally:
-        if os.path.exists(pdf_path):
-            os.remove(pdf_path)
+        await status_message.edit(f"❌ Failed to download `{code}`:\n`{e}`")
 
 #-------------------------------------------#
 @app.on_message(filters.command("update") & filters.user(OWNER_ID))
