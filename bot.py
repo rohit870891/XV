@@ -1,43 +1,25 @@
 from aiohttp import web
-import asyncio, re
-import pyromod.listen
-from pyrogram import Client, filters
-from pyrogram.types import InputMediaPhoto, Message
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from pyrogram.enums import ParseMode
-from collections import defaultdict
+import asyncio, re, os, sys, time, subprocess
 from datetime import datetime
-import logging
-import sys
-import pytz
-import os
+from collections import defaultdict
 from bs4 import BeautifulSoup
 from PIL import Image
 from io import BytesIO
-import tempfile
-import asyncio
+
 import aiohttp
-import libtorrent as lt
-import time
-import cloudscraper
-import io
+import pyromod.listen
+from pyrogram import Client, filters
+from pyrogram.enums import ParseMode
 from pyrogram.types import (
-    InlineQueryResultArticle,
-    InputTextMessageContent,
-    InlineKeyboardMarkup,
-    InlineKeyboardButton
+    Message, CallbackQuery, InlineQueryResultArticle,
+    InputTextMessageContent, InlineKeyboardMarkup, InlineKeyboardButton
 )
-from pyrogram.types import CallbackQuery
 
-# Custom config and database imports
-from config import *
-from database import *
-import subprocess 
-import cloudscraper
-from bs4 import BeautifulSoup
+# ---------------- CONFIG ---------------- #
+from config import *  # should define: APP_ID, API_HASH, TG_BOT_TOKEN, OWNER_ID, PORT, LOGGER, START_MSG, START_PIC
+from database import *  # your database connection file
 
-
-# Web route setup
+# ---------------- WEB SERVER ---------------- #
 routes = web.RouteTableDef()
 
 @routes.get("/", allow_head=True)
@@ -49,66 +31,60 @@ async def web_server():
     web_app.add_routes(routes)
     return web_app
 
-# Bot Client
+# ---------------- BOT ---------------- #
 class Bot(Client):
     def __init__(self):
         super().__init__(
-            name="Bot",
-            api_hash=API_HASH,
+            name="nhentaiBot",
             api_id=APP_ID,
-            workers=TG_BOT_WORKERS,
-            bot_token=TG_BOT_TOKEN
+            api_hash=API_HASH,
+            bot_token=TG_BOT_TOKEN,
+            workers=4
         )
         self.LOGGER = LOGGER
 
     async def start(self):
         await super().start()
         usr_bot_me = await self.get_me()
-        self.uptime = datetime.now()
-
         self.set_parse_mode(ParseMode.HTML)
         self.username = usr_bot_me.username
-        self.LOGGER(__name__).info(f"Bot Running..! Made by @Rohit_1888")
+        self.uptime = datetime.now()
+        self.LOGGER(__name__).info(f"Bot Running...! @{self.username}")
 
-        # Start web server
         app = web.AppRunner(await web_server())
         await app.setup()
         await web.TCPSite(app, "0.0.0.0", PORT).start()
 
         try:
-            await self.send_message(OWNER_ID, text="<b><blockquote> Bᴏᴛ Rᴇsᴛᴀʀᴛᴇᴅ by @Codeflix_Bots</blockquote></b>")
+            await self.send_message(OWNER_ID, text="🤖 Bot Restarted Successfully")
         except:
             pass
 
     async def stop(self, *args):
         await super().stop()
-        self.LOGGER(__name__).info("Bot stopped.")
+        self.LOGGER(__name__).info("Bot Stopped.")
 
     def run(self):
         loop = asyncio.get_event_loop()
         loop.run_until_complete(self.start())
-        self.LOGGER(__name__).info("Bot is now running. Thanks to @rohit_1888")
         try:
             loop.run_forever()
         except KeyboardInterrupt:
-            self.LOGGER(__name__).info("Shutting down...")
+            self.LOGGER(__name__).info("Bot Interrupted.")
         finally:
             loop.run_until_complete(self.stop())
 
-# Create bot instance
 app = Bot()
 
-
-# Start command
+# ---------------- START ---------------- #
 @app.on_message(filters.command('start') & filters.private)
 async def start_command(client: Client, message: Message):
     keyboard = InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("🔎 Sᴇᴀʀᴄʜ Mᴀɴɢᴀ", switch_inline_query_current_chat="")],
-            [InlineKeyboardButton("Cᴏɴᴛᴀᴄᴛ Dᴇᴠᴇʟᴏᴘᴇʀ 💻", url="https://telegram.dog/rohit_1888")]
+            [InlineKeyboardButton("🔎 Search Manga", switch_inline_query_current_chat="")],
+            [InlineKeyboardButton("💻 Contact Developer", url="https://t.me/rohit_1888")]
         ]
     )
-
     await message.reply_photo(
         photo=START_PIC,
         caption=START_MSG.format(
@@ -121,87 +97,19 @@ async def start_command(client: Client, message: Message):
         reply_markup=keyboard
     )
 
-#---------------------
+# ---------------- INLINE SEARCH ---------------- #
 @app.on_inline_query()
 async def inline_search(client: Client, inline_query):
     query = inline_query.query.strip()
 
     if not query:
-        await inline_query.answer([], switch_pm_text="Type a search term", switch_pm_parameter="start")
+        await inline_query.answer([], switch_pm_text="Type something to search", switch_pm_parameter="start")
         return
 
     results = await search_nhentai(query)
-    await inline_query.answer(results, cache_time=1)
+    await inline_query.answer(results, cache_time=1, is_personal=True)
 
-
-#---------------------
-
-async def download_manga_as_pdf(code, progress_callback=None):
-    base_url = f"https://nhentai.net/g/{code}/"
-    folder = f"nhentai_{code}"
-    os.makedirs(folder, exist_ok=True)
-
-    async with aiohttp.ClientSession() as session:
-        async with session.get(base_url) as response:
-            html = await response.text()
-
-    soup = BeautifulSoup(html, "html.parser")
-    thumbnails = soup.select(".thumb-container img")
-
-    images = []
-    for i, img in enumerate(thumbnails):
-        src = img.get("data-src") or img.get("src")
-        src = src.replace("t.jpg", ".jpg").replace("t.png", ".png")
-        if src.startswith("//"):
-            src = "https:" + src
-
-        filename = os.path.join(folder, f"{i+1:03}.jpg")
-        await download_image(session, src, filename)
-
-        if progress_callback:
-            await progress_callback(i + 1, len(thumbnails), "Downloading")
-
-        images.append(filename)
-
-    # Convert to PDF
-    image_objs = [Image.open(img).convert("RGB") for img in images]
-    pdf_path = f"{folder}.pdf"
-    image_objs[0].save(pdf_path, save_all=True, append_images=image_objs[1:])
-
-    # Cleanup
-    for img in images:
-        os.remove(img)
-    os.rmdir(folder)
-
-    return pdf_path
-
-
-
-
-#-------------------------------
-@app.on_callback_query(filters.regex(r"^download_(\d+)$"))
-async def handle_download_button(client: Client, callback_query):
-    code = callback_query.matches[0].group(1)
-    chat_id = callback_query.message.chat.id
-    msg = await callback_query.message.reply(f"📥 Starting download for `{code}`...", quote=True)
-
-    async def progress(current, total, stage):
-        percent = int((current / total) * 100)
-        await msg.edit(f"{stage}... {percent}%")
-
-    try:
-        pdf_path = await download_manga_as_pdf(code, progress)
-        await msg.edit("📤 Uploading PDF...")
-        await client.send_document(chat_id, document=pdf_path, caption=f"📖 Manga: {code}")
-    except Exception as e:
-        await msg.edit(f"❌ Failed: {e}")
-    finally:
-        if os.path.exists(pdf_path):
-            os.remove(pdf_path)
-
-
-#-----------------------
-
+# ---------------- SEARCH FUNCTION ---------------- #
 async def search_nhentai(query):
     url = f"https://nhentai.xxx/search/?q={query.replace(' ', '+')}"
     results = []
@@ -210,33 +118,22 @@ async def search_nhentai(query):
         async with session.get(url) as response:
             if response.status != 200:
                 return []
-
             html = await response.text()
 
     soup = BeautifulSoup(html, "html.parser")
     gallery_items = soup.select(".gallery")
 
-    for i, item in enumerate(gallery_items[:10]):  # Max 10 results
-        link_tag = item.select_one("a")
-        if not link_tag or "href" not in link_tag.attrs:
-            continue
-
-        href = link_tag["href"]  # e.g., /g/123456/
-        code = href.split("/")[2]
+    for item in gallery_items[:10]:
+        link = item.select_one("a")["href"]
+        code = link.split("/")[2]
 
         title_tag = item.select_one(".caption")
         title = title_tag.text.strip() if title_tag else f"Code {code}"
 
-        img_tag = item.select_one("img")
-        thumb = img_tag.get("data-src") or img_tag.get("src") if img_tag else None
-        if thumb and thumb.startswith("//"):
+        thumb_tag = item.select_one("img")
+        thumb = thumb_tag.get("data-src") or thumb_tag.get("src")
+        if thumb.startswith("//"):
             thumb = "https:" + thumb
-
-        page_url = f"https://nhentai.xxx/g/{code}/"
-
-        button = InlineKeyboardMarkup([
-            [InlineKeyboardButton("📥 Download PDF", callback_data=f"download_{code}")]
-        ])
 
         results.append(
             InlineQueryResultArticle(
@@ -244,45 +141,96 @@ async def search_nhentai(query):
                 description=f"Code: {code}",
                 thumb_url=thumb,
                 input_message_content=InputTextMessageContent(
-                    message_text=f"**{title}**\n🔗 [Read Now]({page_url})\n`Code:` {code}",
+                    message_text=f"**{title}**\n🔗 [Read Now](https://nhentai.xxx/g/{code}/)\n\n`Code:` {code}",
                     disable_web_page_preview=False
                 ),
-                reply_markup=button
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📥 Download PDF", callback_data=f"download_{code}")]
+                ])
             )
         )
-
     return results
 
-#-------------------------------------------#
+# ---------------- DOWNLOAD PDF ---------------- #
+async def download_manga_as_pdf(code, progress_callback=None):
+    base_url = f"https://nhentai.xxx/g/{code}/"
+    folder = f"nhentai_{code}"
+    os.makedirs(folder, exist_ok=True)
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(base_url) as response:
+            html = await response.text()
+
+        soup = BeautifulSoup(html, "html.parser")
+        thumbnails = soup.select(".thumb-container img")
+
+        images = []
+        for i, img in enumerate(thumbnails):
+            src = img.get("data-src") or img.get("src")
+            src = src.replace("t.jpg", ".jpg").replace("t.png", ".png")
+            if src.startswith("//"):
+                src = "https:" + src
+
+            filename = os.path.join(folder, f"{i+1:03}.jpg")
+            async with session.get(src) as img_resp:
+                with open(filename, 'wb') as f:
+                    f.write(await img_resp.read())
+
+            if progress_callback:
+                await progress_callback(i + 1, len(thumbnails), "Downloading")
+
+            images.append(filename)
+
+    # Convert to PDF
+    image_objs = [Image.open(img).convert("RGB") for img in images]
+    pdf_path = f"{folder}.pdf"
+    image_objs[0].save(pdf_path, save_all=True, append_images=image_objs[1:])
+
+    for img in images:
+        os.remove(img)
+    os.rmdir(folder)
+
+    return pdf_path
+
+# ---------------- CALLBACK: DOWNLOAD PDF ---------------- #
+@app.on_callback_query(filters.regex(r"^download_(\d+)$"))
+async def handle_download_button(client: Client, callback_query: CallbackQuery):
+    code = callback_query.matches[0].group(1)
+    chat_id = callback_query.message.chat.id
+    msg = await callback_query.message.reply(f"📥 Starting download for `{code}`...")
+
+    async def progress(current, total, stage):
+        percent = int((current / total) * 100)
+        await msg.edit(f"{stage}... {percent}%")
+
+    pdf_path = None
+    try:
+        pdf_path = await download_manga_as_pdf(code, progress)
+        await msg.edit("📤 Uploading PDF...")
+        await client.send_document(chat_id, document=pdf_path, caption=f"📖 Manga Code: {code}")
+    except Exception as e:
+        await msg.edit(f"❌ Download failed: {e}")
+    finally:
+        if pdf_path and os.path.exists(pdf_path):
+            os.remove(pdf_path)
+
+# ---------------- UPDATE CMD ---------------- #
 @app.on_message(filters.command("update") & filters.user(OWNER_ID))
 async def update_bot(client, message):
-    #if message.from_user.id not OWNER_ID:
-        #return await message.reply_text("You are not authorized to update the bot.")
-
+    msg = await message.reply_text("🔄 Pulling updates from GitHub...")
     try:
-        msg = await message.reply_text("<b><blockquote>Pulling the latest updates and restarting the bot...</blockquote></b>")
-
-        # Run git pull
-        git_pull = subprocess.run(["git", "pull"], capture_output=True, text=True)
-
-        if git_pull.returncode == 0:
-            await msg.edit_text(f"<b><blockquote>Updates pulled successfully:\n\n{git_pull.stdout}</blockquote></b>")
+        pull = subprocess.run(["git", "pull"], capture_output=True, text=True)
+        if pull.returncode == 0:
+            await msg.edit(f"✅ Updated:\n<pre>{pull.stdout}</pre>")
         else:
-            await msg.edit_text(f"<b><blockquote>Failed to pull updates:\n\n{git_pull.stderr}</blockquote></b>")
+            await msg.edit(f"❌ Git error:\n<pre>{pull.stderr}</pre>")
             return
-
-        await asyncio.sleep(3)
-
-        await msg.edit_text("<b><blockquote>✅ Bᴏᴛ ɪs ʀᴇsᴛᴀʀᴛɪɴɢ ɴᴏᴡ...</blockquote></b>")
-
-    except Exception as e:
-        await message.reply_text(f"An error occurred: {e}")
-        return
-
-    finally:
-        # Restart the bot process
+        await asyncio.sleep(2)
+        await msg.edit("♻️ Restarting bot...")
         os.execl(sys.executable, sys.executable, *sys.argv)
+    except Exception as e:
+        await msg.edit(f"⚠️ Error: {e}")
 
-# Start bot
+# ---------------- MAIN ---------------- #
 if __name__ == "__main__":
     app.run()
