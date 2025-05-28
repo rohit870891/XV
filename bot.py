@@ -10,6 +10,8 @@ from datetime import datetime
 import logging
 import sys
 import pytz
+import aiohttp
+from bs4 import BeautifulSoup
 
 # Custom config and database imports
 from config import *
@@ -81,7 +83,10 @@ app = Bot()
 @app.on_message(filters.command('start') & filters.private)
 async def start_command(client: Client, message: Message):
     keyboard = InlineKeyboardMarkup(
-        [[InlineKeyboardButton("Cᴏɴᴛᴀᴄᴛ Dᴇᴠᴇʟᴏᴘᴇʀ 💻", url="https://telegram.dog/rohit_1888")]]
+        [
+            [InlineKeyboardButton("🔎 Sᴇᴀʀᴄʜ Mᴀɴɢᴀ", switch_inline_query_current_chat="")],
+            [InlineKeyboardButton("Cᴏɴᴛᴀᴄᴛ Dᴇᴠᴇʟᴏᴘᴇʀ 💻", url="https://telegram.dog/rohit_1888")]
+        ]
     )
 
     await message.reply_photo(
@@ -97,8 +102,53 @@ async def start_command(client: Client, message: Message):
     )
 
 
+@app.on_inline_query()
+async def inline_search(client: Client, inline_query):
+    query = inline_query.query.strip()
+
+    if not query:
+        await inline_query.answer([], switch_pm_text="Type something to search", switch_pm_parameter="start")
+        return
+
+    # Example logic for nhentai search (replace with actual scraper/API)
+    results = await search_nhentai(query)  # <-- You implement this function
+
+    await inline_query.answer(results, cache_time=1)
 
 
+async def search_nhentai(query):
+    url = f"https://nhentai.net/search/?q={query.replace(' ', '+')}"
+    results = []
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as response:
+            if response.status != 200:
+                return []
+
+            html = await response.text()
+
+    soup = BeautifulSoup(html, "html.parser")
+    gallery_items = soup.select(".gallery")
+
+    for i, item in enumerate(gallery_items[:10]):  # Limit to 10 results
+        title = item.select_one(".caption").text.strip()
+        code = item['href'].split('/')[2]
+        thumb = item.select_one("img").get("data-src") or item.select_one("img").get("src")
+        page_url = f"https://nhentai.net/g/{code}/"
+
+        results.append(
+            InlineQueryResultArticle(
+                title=title,
+                description=f"Code: {code}",
+                thumb_url=thumb,
+                input_message_content=InputTextMessageContent(
+                    message_text=f"**{title}**\n🔗 [Read Now]({page_url})\n`Code:` {code}",
+                    disable_web_page_preview=False
+                )
+            )
+        )
+
+    return results
 
 
 # Start bot
