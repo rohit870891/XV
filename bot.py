@@ -396,55 +396,88 @@ async def download_nhentai_as_pdf(code, status_msg, client):
 
     return pdf_path
 
-
+#-----------------------
 @app.on_callback_query()
 async def handle_download_button(client, callback_query: CallbackQuery):
     data = callback_query.data
     if not data.startswith("download:"):
         await callback_query.answer()
         return
+
     _, code, page_str = data.split(":")
     page = int(page_str)
+
+    # Acknowledge callback query without alert popup
     await callback_query.answer(f"Downloading manga code {code} ...", show_alert=False)
 
-    status_msg = await callback_query.message.reply(f"⏳ Preparing to download `{code}`...")
+    # Edit inline message to show starting status
+    try:
+        await callback_query.edit_message_text(f"⏳ Preparing to download `{code}`...")
+    except Exception:
+        # If message can't be edited (e.g. no message), just ignore
+        pass
+
+    # Determine user chat id safely
+    user_chat_id = None
+    if callback_query.message:
+        user_chat_id = callback_query.message.chat.id
+    else:
+        # fallback to sending DM using callback_query.from_user.id
+        user_chat_id = callback_query.from_user.id
 
     try:
         scraper = get_authenticated_session()
         torrent_url = get_torrent_url(scraper, code)
         torrent_bytes = download_torrent(scraper, torrent_url)
 
-        # Save torrent bytes temporarily
+        # Save torrent file to temp directory
         temp_dir = tempfile.mkdtemp()
         torrent_path = os.path.join(temp_dir, f"{code}.torrent")
         with open(torrent_path, "wb") as f:
             f.write(torrent_bytes)
 
-        # Load torrent info
+        # Load torrent info and setup session
         info = lt.torrent_info(torrent_path)
-
-        # Setup libtorrent session
         ses = lt.session()
         ses.listen_on(6881, 6891)
 
-        # Download torrent files
         async def progress_callback(progress):
-            await send_progress_edit(status_msg, f"📥 Download progress: {progress:.2f}%")
+            # Progress callback can update inline message text
+            try:
+                await callback_query.edit_message_text(f"📥 Download progress: {progress:.2f}%")
+            except Exception:
+                pass  # ignore if can't edit (e.g. no inline message)
 
+        # Download all images via torrent (you implement this)
         await download_images_from_torrent(info, ses, temp_dir, progress_callback)
 
-        # Convert images to PDF
+        # Convert downloaded images to PDF (you implement this)
         pdf_path = os.path.join(temp_dir, f"{code}.pdf")
         convert_images_to_pdf(temp_dir, pdf_path)
 
-        # Send PDF
-        await status_msg.edit("📤 Uploading PDF...")
-        await client.send_document(callback_query.message.chat.id, pdf_path, caption=f"Manga `{code}` downloaded as PDF.")
+        # Edit message to indicate upload
+        try:
+            await callback_query.edit_message_text("📤 Uploading PDF...")
+        except Exception:
+            pass
 
-        await status_msg.delete()
+        # Send the PDF file to user private chat
+        await client.send_document(user_chat_id, pdf_path, caption=f"Manga `{code}` downloaded as PDF.")
+
+        # Delete the inline message if possible
+        if callback_query.message:
+            try:
+                await callback_query.message.delete()
+            except Exception:
+                pass
 
     except Exception as e:
-        await status_msg.edit(f"❌ Failed to download `{code}`:\n`{e}`")
+        # Show error message in inline message if possible
+        try:
+            await callback_query.edit_message_text(f"❌ Failed to download `{code}`:\n`{e}`")
+        except Exception:
+            # If cannot edit message, send a private message with error instead
+            await client.send_message(user_chat_id, f"❌ Failed to download `{code}`:\n`{e}`")
 
 #-------------------------------------------#
 @app.on_message(filters.command("update") & filters.user(OWNER_ID))
