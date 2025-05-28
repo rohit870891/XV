@@ -194,24 +194,30 @@ async def download_manga_as_pdf(code, progress_callback=None):
 
 # ---------------- CALLBACK: DOWNLOAD PDF ---------------- #
 @app.on_callback_query(filters.regex(r"^download_(\d+)$"))
-async def handle_download_button(client: Client, callback_query: CallbackQuery):
+async def handle_download_button(client: Client, callback_query):
     code = callback_query.matches[0].group(1)
-    chat_id = callback_query.message.chat.id
-    msg = await callback_query.message.reply(f"📥 Starting download for `{code}`...")
+
+    if callback_query.message:
+        chat_id = callback_query.message.chat.id
+        msg = await callback_query.message.reply(f"📥 Starting download for `{code}`...", quote=True)
+    elif callback_query.inline_message_id:
+        msg = await callback_query.edit_message_text(f"📥 Starting download for `{code}`...")
+        chat_id = callback_query.from_user.id
+    else:
+        return
 
     async def progress(current, total, stage):
         percent = int((current / total) * 100)
         await msg.edit(f"{stage}... {percent}%")
 
-    pdf_path = None
     try:
         pdf_path = await download_manga_as_pdf(code, progress)
         await msg.edit("📤 Uploading PDF...")
-        await client.send_document(chat_id, document=pdf_path, caption=f"📖 Manga Code: {code}")
+        await client.send_document(chat_id, document=pdf_path, caption=f"📖 Manga: {code}")
     except Exception as e:
-        await msg.edit(f"❌ Download failed: {e}")
+        await msg.edit(f"❌ Failed: {e}")
     finally:
-        if pdf_path and os.path.exists(pdf_path):
+        if os.path.exists(pdf_path):
             os.remove(pdf_path)
 
 # ---------------- UPDATE CMD ---------------- #
