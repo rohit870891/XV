@@ -39,7 +39,7 @@ PASSWORD = "shukla89"
 # Login and create a scraper session
 def get_authenticated_session():
     scraper = cloudscraper.create_scraper()
-    login_url = "https://nhentai.net/login/"
+    login_url = "https://nhentai.xxx/login/"
     # Step 1: Get login page and CSRF token
     r = scraper.get(login_url)
     if r.status_code != 200:
@@ -65,7 +65,7 @@ def get_authenticated_session():
 
 # Extract .torrent URL from gallery page
 def get_torrent_url(scraper, code):
-    gallery_url = f"https://nhentai.net/g/{code}/"
+    gallery_url = f"https://nhentai.xxx/g/{code}/"
     r = scraper.get(gallery_url)
     if r.status_code != 200:
         raise Exception("Gallery not found")
@@ -76,7 +76,7 @@ def get_torrent_url(scraper, code):
         raise Exception("Download torrent button not found")
     torrent_url = download_btn["href"]
     if torrent_url.startswith("/"):
-        torrent_url = "https://nhentai.net" + torrent_url
+        torrent_url = "https://nhentai.xxx" + torrent_url
     return torrent_url
 
 # Download torrent file bytes
