@@ -101,7 +101,6 @@ async def start_command(client: Client, message: Message):
 @app.on_inline_query()
 async def inline_search(client: Client, inline_query):
     query = inline_query.query.strip()
-
     if not query:
         await inline_query.answer([], switch_pm_text="Type something to search", switch_pm_parameter="start")
         return
@@ -151,23 +150,21 @@ async def search_nhentai(query):
         )
     return results
 
-# ---------------- HEADERS ---------------- #
+# ---------------- PAGE DOWNLOAD HELPER ---------------- #
+async def download_page(session, image_url, filename, page_num):
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                      "AppleWebKit/537.36 (KHTML, like Gecko) "
+                      "Chrome/115.0 Safari/537.36"
+    }
+    async with session.get(image_url, headers=headers) as img_resp:
+        if img_resp.status != 200:
+            raise Exception(f"Failed to download page {page_num} (status {img_resp.status})")
+        content = await img_resp.read()
+        with open(filename, "wb") as f:
+            f.write(content)
 
-headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                  "AppleWebKit/537.36 (KHTML, like Gecko) "
-                  "Chrome/115.0 Safari/537.36"
-}
-
-async with session.get(image_url, headers=headers) as img_resp:
-    if img_resp.status != 200:
-        raise Exception(f"Failed to download page {page_num} (status {img_resp.status})")
-
-    filename = os.path.join(folder, f"{page_num:03}.{extension}")
-    with open(filename, "wb") as f:
-        f.write(await img_resp.read())
-
-# ---------------- DOWNLOAD PDF ---------------- #
+# ---------------- DOWNLOAD PDF FUNCTION ---------------- #
 async def download_manga_as_pdf(code, progress_callback=None):
     api_url = f"https://nhentai.net/api/gallery/{code}"
     folder = f"nhentai_{code}"
@@ -198,13 +195,8 @@ async def download_manga_as_pdf(code, progress_callback=None):
             image_url = f"https://i.nhentai.net/galleries/{data['media_id']}/{page_num}.{extension}"
             print(f"Downloading page {page_num}: {image_url}")
 
-            async with session.get(image_url, headers=headers) as img_resp:
-                if img_resp.status != 200:
-                    raise Exception(f"Failed to download page {page_num} (status {img_resp.status})")
-
-                filename = os.path.join(folder, f"{page_num:03}.{extension}")
-                with open(filename, "wb") as f:
-                    f.write(await img_resp.read())
+            filename = os.path.join(folder, f"{page_num:03}.{extension}")
+            await download_page(session, image_url, filename, page_num)
 
             images.append(filename)
 
@@ -221,30 +213,31 @@ async def download_manga_as_pdf(code, progress_callback=None):
 
     return pdf_path
 
-# ---------------- CALLBACK: DOWNLOAD PDF ---------------- #
+# ---------------- CALLBACK HANDLER ---------------- #
 @app.on_callback_query(filters.regex(r"^download_(\d+)$"))
 async def handle_download_button(client: Client, callback_query):
     code = callback_query.matches[0].group(1)
-    pdf_path = None  # Initialize to avoid UnboundLocalError
+    pdf_path = None
 
     try:
         if callback_query.message:
             chat_id = callback_query.message.chat.id
             msg = await callback_query.message.reply(f"📥 Starting download for `{code}`...", quote=True)
+
             async def progress(current, total, stage):
                 percent = int((current / total) * 100)
                 await msg.edit(f"{stage}... {percent}%")
+
         elif callback_query.inline_message_id:
             chat_id = callback_query.from_user.id
             await callback_query.edit_message_text(f"📥 Starting download for `{code}`...")
 
-            # Define progress differently for inline since there's no message object
             async def progress(current, total, stage):
                 percent = int((current / total) * 100)
                 try:
                     await callback_query.edit_message_text(f"{stage}... {percent}%")
                 except Exception:
-                    pass  # Editing too fast or inline expired
+                    pass
 
         # Start download
         pdf_path = await download_manga_as_pdf(code, progress)
@@ -271,7 +264,6 @@ async def handle_download_button(client: Client, callback_query):
     finally:
         if pdf_path and os.path.exists(pdf_path):
             os.remove(pdf_path)
-
 # ---------------- UPDATE CMD ---------------- #
 @app.on_message(filters.command("update") & filters.user(OWNER_ID))
 async def update_bot(client, message):
