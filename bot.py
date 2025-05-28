@@ -247,13 +247,12 @@ async def inline_search(client, inline_query):
         return
 
     scraper = cloudscraper.create_scraper()
-    search_url = f"https://nhentai.net/search/?q={query.replace(' ', '+')}"
+    search_url = f"https://nhentai.xxx/search/?q={query.replace(' ', '+')}"
     resp = scraper.get(search_url)
     if resp.status_code != 200:
         await inline_query.answer([], switch_pm_text="Error contacting nhentai", switch_pm_parameter="start")
         return
 
-    from bs4 import BeautifulSoup
     soup = BeautifulSoup(resp.text, "html.parser")
     results = []
     gallery_items = soup.select(".gallery a.cover")
@@ -297,7 +296,7 @@ async def inline_search(client, inline_query):
 
 #-------------------------------
 async def search_nhentai(query):
-    url = f"https://nhentai.net/search/?q={query.replace(' ', '+')}"
+    url = f"https://nhentai.xxx/search/?q={query.replace(' ', '+')}"
     results = []
 
     async with aiohttp.ClientSession() as session:
@@ -326,7 +325,7 @@ async def search_nhentai(query):
         if thumb and thumb.startswith("//"):
             thumb = "https:" + thumb
 
-        page_url = f"https://nhentai.net/g/{code}/"
+        page_url = f"https://nhentai.xxx/g/{code}/"
 
         button = InlineKeyboardMarkup([
             [InlineKeyboardButton("📥 Download PDF", callback_data=f"download_{code}")]
@@ -349,8 +348,8 @@ async def search_nhentai(query):
 
 
 async def download_nhentai_as_pdf(code, status_msg, client):
-    base_url = f"https://nhentai.net/g/{code}/"
-    headers = {"Referer": "https://nhentai.net"}
+    base_url = f"https://nhentai.xxx/g/{code}/"
+    headers = {"Referer": "https://nhentai.xxx"}
 
     async with aiohttp.ClientSession(headers=headers) as session:
         # Fetch gallery page
