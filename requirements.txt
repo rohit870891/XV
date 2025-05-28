@@ -14,5 +14,6 @@ python-dotenv
 pytz
 requests
 bs4
+pillow
 aiofiles
 asyncio
