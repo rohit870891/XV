@@ -111,7 +111,7 @@ async def inline_search(client: Client, inline_query):
 
 # ---------------- SEARCH FUNCTION ---------------- #
 async def search_nhentai(query):
-    url = f"https://nhentai.xxx/search/?q={query.replace(' ', '+')}"
+    url = f"https://nhentai.net/search/?q={query.replace(' ', '+')}"
     results = []
 
     async with aiohttp.ClientSession() as session:
@@ -141,7 +141,7 @@ async def search_nhentai(query):
                 description=f"Code: {code}",
                 thumb_url=thumb,
                 input_message_content=InputTextMessageContent(
-                    message_text=f"**{title}**\n🔗 [Read Now](https://nhentai.xxx/g/{code}/)\n\n`Code:` {code}",
+                    message_text=f"**{title}**\n🔗 [Read Now](https://nhentai.net/g/{code}/)\n\n`Code:` {code}",
                     disable_web_page_preview=False
                 ),
                 reply_markup=InlineKeyboardMarkup([
@@ -153,7 +153,7 @@ async def search_nhentai(query):
 
 # ---------------- DOWNLOAD PDF ---------------- #
 async def download_manga_as_pdf(code, progress_callback=None):
-    base_url = f"https://nhentai.xxx/g/{code}/"
+    base_url = f"https://nhentai.net/g/{code}/"
     folder = f"nhentai_{code}"
     os.makedirs(folder, exist_ok=True)
 
