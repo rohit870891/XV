@@ -163,27 +163,36 @@ async def download_manga_as_pdf(code, progress_callback=None):
 
         soup = BeautifulSoup(html, "html.parser")
 
-        # Number of pages = number of thumbnail containers
-        num_pages = len(soup.select(".thumb-container"))
+        # Find exact number of pages
+        num_pages = 0
+        for span in soup.select("div#info .tag-container span.name"):
+            if span.text.strip().lower() == "pages":
+                count_span = span.find_next_sibling("span.count")
+                if count_span:
+                    num_pages = int(count_span.text.strip())
+                break
+        if num_pages == 0:
+            num_pages = len(soup.select(".thumb-container"))  # fallback
 
         images = []
         for i in range(num_pages):
             page_num = i + 1
-            # Construct URL for full-quality images directly:
-            # Format: https://i.nhentai.net/galleries/<gallery_id>/<page_num>.jpg
-            image_url = f"https://i.nhentai.net/galleries/{code}/{page_num}.jpg"
 
-            filename = os.path.join(folder, f"{page_num:03}.jpg")
-            async with session.get(image_url) as img_resp:
-                if img_resp.status != 200:
-                    raise Exception(f"Failed to download page {page_num}")
-                with open(filename, 'wb') as f:
-                    f.write(await img_resp.read())
+            # Try jpg first
+            for ext in ["jpg", "png"]:
+                image_url = f"https://i.nhentai.net/galleries/{code}/{page_num}.{ext}"
+                async with session.get(image_url) as img_resp:
+                    if img_resp.status == 200:
+                        filename = os.path.join(folder, f"{page_num:03}.{ext}")
+                        with open(filename, 'wb') as f:
+                            f.write(await img_resp.read())
+                        images.append(filename)
+                        break
+            else:
+                raise Exception(f"Failed to download page {page_num}")
 
             if progress_callback:
                 await progress_callback(page_num, num_pages, "Downloading")
-
-            images.append(filename)
 
     # Convert images to PDF
     image_objs = [Image.open(img).convert("RGB") for img in images]
