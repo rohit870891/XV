@@ -151,55 +151,70 @@ async def search_nhentai(query):
         )
     return results
 
+# ---------------- HEADERS ---------------- #
+
+headers = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                  "AppleWebKit/537.36 (KHTML, like Gecko) "
+                  "Chrome/115.0 Safari/537.36"
+}
+
+async with session.get(image_url, headers=headers) as img_resp:
+    if img_resp.status != 200:
+        raise Exception(f"Failed to download page {page_num} (status {img_resp.status})")
+
+    filename = os.path.join(folder, f"{page_num:03}.{extension}")
+    with open(filename, "wb") as f:
+        f.write(await img_resp.read())
+
 # ---------------- DOWNLOAD PDF ---------------- #
 async def download_manga_as_pdf(code, progress_callback=None):
-    gallery_url = f"https://nhentai.net/g/{code}/"
+    api_url = f"https://nhentai.net/api/gallery/{code}"
     folder = f"nhentai_{code}"
     os.makedirs(folder, exist_ok=True)
 
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                      "AppleWebKit/537.36 (KHTML, like Gecko) "
+                      "Chrome/115.0 Safari/537.36"
+    }
+
     async with aiohttp.ClientSession() as session:
-        async with session.get(gallery_url) as response:
-            html = await response.text()
+        async with session.get(api_url, headers=headers) as resp:
+            if resp.status != 200:
+                raise Exception(f"Failed to get gallery metadata: status {resp.status}")
+            data = await resp.json()
 
-        soup = BeautifulSoup(html, "html.parser")
-
-        # Find exact number of pages
-        num_pages = 0
-        for span in soup.select("div#info .tag-container span.name"):
-            if span.text.strip().lower() == "pages":
-                count_span = span.find_next_sibling("span.count")
-                if count_span:
-                    num_pages = int(count_span.text.strip())
-                break
-        if num_pages == 0:
-            num_pages = len(soup.select(".thumb-container"))  # fallback
+        num_pages = len(data["images"]["pages"])
+        print(f"Gallery {code} has {num_pages} pages")
 
         images = []
-        for i in range(num_pages):
+        for i, page in enumerate(data["images"]["pages"]):
             page_num = i + 1
+            ext = page.get("t")
+            ext_map = {"j": "jpg", "p": "png", "g": "gif"}
+            extension = ext_map.get(ext, "jpg")
 
-            # Try jpg first
-            for ext in ["jpg", "png"]:
-                image_url = f"https://i.nhentai.net/galleries/{code}/{page_num}.{ext}"
-                async with session.get(image_url) as img_resp:
-                    if img_resp.status == 200:
-                        filename = os.path.join(folder, f"{page_num:03}.{ext}")
-                        with open(filename, 'wb') as f:
-                            f.write(await img_resp.read())
-                        images.append(filename)
-                        break
-            else:
-                raise Exception(f"Failed to download page {page_num}")
+            image_url = f"https://i.nhentai.net/galleries/{data['media_id']}/{page_num}.{extension}"
+            print(f"Downloading page {page_num}: {image_url}")
+
+            async with session.get(image_url, headers=headers) as img_resp:
+                if img_resp.status != 200:
+                    raise Exception(f"Failed to download page {page_num} (status {img_resp.status})")
+
+                filename = os.path.join(folder, f"{page_num:03}.{extension}")
+                with open(filename, "wb") as f:
+                    f.write(await img_resp.read())
+
+            images.append(filename)
 
             if progress_callback:
                 await progress_callback(page_num, num_pages, "Downloading")
 
-    # Convert images to PDF
     image_objs = [Image.open(img).convert("RGB") for img in images]
     pdf_path = f"{folder}.pdf"
     image_objs[0].save(pdf_path, save_all=True, append_images=image_objs[1:])
 
-    # Clean up images folder
     for img in images:
         os.remove(img)
     os.rmdir(folder)
