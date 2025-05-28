@@ -32,101 +32,40 @@ from pyrogram.types import CallbackQuery
 from config import *
 from database import *
 import subprocess 
+import cloudscraper
+from bs4 import BeautifulSoup
 
-USERNAME = "shukla89"
-PASSWORD = "shukla89"
-
-# Login and create a scraper session
-def get_authenticated_session():
+def get_gallery_title(gallery_id: str) -> str:
+    url = f"https://nhentai.xxx/g/{gallery_id}/"
     scraper = cloudscraper.create_scraper()
-    login_url = "https://nhentai.xxx/login/"
-    # Step 1: Get login page and CSRF token
-    r = scraper.get(login_url)
-    if r.status_code != 200:
-        raise Exception("Cannot reach login page")
-    from bs4 import BeautifulSoup
-    soup = BeautifulSoup(r.text, "html.parser")
-    token = soup.find("input", {"name":"csrfmiddlewaretoken"})["value"]
-    login_data = {
-        "username": USERNAME,
-        "password": PASSWORD,
-        "csrfmiddlewaretoken": token,
-        "next": "/",
-    }
-    headers = {
-        "Referer": login_url,
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0 Safari/537.36",
-    }
-    # Step 2: Post login form
-    resp = scraper.post(login_url, data=login_data, headers=headers)
-    if resp.status_code != 200 or "Logout" not in resp.text:
-        raise Exception("Login failed")
-    return scraper
+    res = scraper.get(url)
+    soup = BeautifulSoup(res.text, "html.parser")
+    return soup.select_one('h1.title').text.strip()
 
-# Extract .torrent URL from gallery page
-def get_torrent_url(scraper, code):
-    gallery_url = f"https://nhentai.xxx/g/{code}/"
-    r = scraper.get(gallery_url)
-    if r.status_code != 200:
-        raise Exception("Gallery not found")
-    from bs4 import BeautifulSoup
-    soup = BeautifulSoup(r.text, "html.parser")
-    download_btn = soup.find("a", {"class": "btn btn-primary btn-block btn-torrent"})
-    if not download_btn:
-        raise Exception("Download torrent button not found")
-    torrent_url = download_btn["href"]
-    if torrent_url.startswith("/"):
-        torrent_url = "https://nhentai.xxx" + torrent_url
-    return torrent_url
 
-# Download torrent file bytes
-def download_torrent(scraper, torrent_url):
-    r = scraper.get(torrent_url)
-    if r.status_code != 200:
-        raise Exception("Failed to download torrent file")
-    return r.content
+def get_gallery_title(gallery_id: str) -> str:
+    url = f"https://nhentai.xxx/g/{gallery_id}/"
+    scraper = cloudscraper.create_scraper()
+    res = scraper.get(url)
+    soup = BeautifulSoup(res.text, "html.parser")
+    return soup.select_one('h1.title').text.strip()
 
-# Use libtorrent to get list of files from torrent bytes
-def get_files_from_torrent(torrent_bytes):
-    info = lt.torrent_info(lt.bdecode(torrent_bytes))
-    files = info.files()
-    file_list = []
-    for i in range(files.num_files()):
-        f = files.file_path(i)
-        file_list.append(f)
-    return file_list, info
-
-# Download files from torrent using libtorrent session (only metadata to get files URLs)
-async def download_images_from_torrent(info, session, temp_dir, status_callback=None):
-    params = {
-        "save_path": temp_dir,
-        "storage_mode": lt.storage_mode_t.storage_mode_allocate,
-        "ti": info,
-        "paused": False,
-        "auto_managed": True,
-        "duplicate_is_error": True
-    }
-    handle = session.add_torrent(params)
-    print("Downloading torrent metadata and files...")
-
-    while not handle.has_metadata():
-        await asyncio.sleep(1)
-    print("Metadata received, starting torrent download")
-
-    # Wait for torrent to finish or timeout (5 minutes)
-    start_time = time.time()
-    timeout = 300
-    while handle.status().state != lt.torrent_status.seeding:
-        s = handle.status()
-        progress = s.progress * 100
-        if status_callback:
-            await status_callback(progress)
-        if time.time() - start_time > timeout:
-            print("Timeout downloading torrent")
-            break
-        await asyncio.sleep(1)
-
-    print("Torrent download finished or timeout reached")
+async def download_and_convert(gallery_id: str) -> io.BytesIO:
+    url = f"https://i.nhentai.xxx/galleries/{gallery_id}.zip"
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as resp:
+            zip_data = await resp.read()
+    
+    zip_bytes = io.BytesIO(zip_data)
+    pdf_bytes = io.BytesIO()
+    
+    with zipfile.ZipFile(zip_bytes, 'r') as z:
+        images = [Image.open(z.open(f)) for f in sorted(z.namelist()) if f.endswith(('.jpg', '.png'))]
+        rgb_images = [img.convert("RGB") for img in images]
+        rgb_images[0].save(pdf_bytes, format="PDF", save_all=True, append_images=rgb_images[1:])
+    
+    pdf_bytes.seek(0)
+    return pdf_bytes
 
 # Convert all downloaded images to PDF
 def convert_images_to_pdf(image_folder, output_pdf_path):
@@ -239,59 +178,30 @@ async def start_command(client: Client, message: Message):
 #---------------------
 
 
-@app.on_inline_query()
-async def inline_search(client, inline_query):
+@Client.on_inline_query()
+async def handle_inline(client, inline_query):
     query = inline_query.query.strip()
-    if not query:
-        await inline_query.answer([], switch_pm_text="Type something to search", switch_pm_parameter="start")
-        return
+    gallery_id = extract_gallery_id(query)
+    if not gallery_id:
+        return await inline_query.answer([], switch_pm_text="Invalid Gallery ID", cache_time=1)
 
-    scraper = cloudscraper.create_scraper()
-    search_url = f"https://nhentai.xxx/search/?q={query.replace(' ', '+')}"
-    resp = scraper.get(search_url)
-    if resp.status_code != 200:
-        await inline_query.answer([], switch_pm_text="Error contacting nhentai", switch_pm_parameter="start")
-        return
+    title = get_gallery_title(gallery_id)
+    pdf_data = await download_and_convert(gallery_id)
 
-    soup = BeautifulSoup(resp.text, "html.parser")
-    results = []
-    gallery_items = soup.select(".gallery a.cover")
-    for i, item in enumerate(gallery_items[:10]):
-        title = item.get("title") or "No Title"
-        href = item.get("href")
-        code = href.strip("/").split("/")[-1]
-        img_tag = item.select_one("img")
-        thumb = img_tag.get("data-src") or img_tag.get("src")
-        if thumb.startswith("//"):
-            thumb = "https:" + thumb
-        page_url = f"https://nhentai.net/g/{code}/"
-
-        buttons = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("Read Online", url=page_url),
-                InlineKeyboardButton("Download PDF", callback_data=f"download:{code}:1")
-            ],
-            [
-                InlineKeyboardButton("◀️ Back", switch_inline_query_current_chat=""),  # Implement actual paging logic if needed
-                InlineKeyboardButton("Next ▶️", switch_inline_query_current_chat=query)
-            ]
-        ])
-
-        results.append(
-            InlineQueryResultArticle(
-                title=title,
-                description=f"Code: {code}",
-                thumb_url=thumb,
-                input_message_content=InputTextMessageContent(
-                    message_text=f"**{title}**\n🔗 [Read Online]({page_url})\n`Code:` {code}",
-                    # Use link_preview_options instead of disable_web_page_preview as warning suggests
-                    link_preview_options={}
-                ),
-                reply_markup=buttons
-            )
+    await inline_query.answer([
+        InlineQueryResultDocument(
+            title=title,
+            document=pdf_data,
+            mime_type="application/pdf",
+            caption=f"Gallery: {title}\nID: {gallery_id}",
+            file_name=f"{title}.pdf",
+            input_message_content=InputTextMessageContent(f"📕 {title} — Downloading..."),
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("🔁 Next", switch_inline_query_current_chat="next")],
+                [InlineKeyboardButton("⬇️ Download", url=f"https://nhentai.xxx/g/{gallery_id}/")]
+            ])
         )
-
-    await inline_query.answer(results, cache_time=1)
+    ], cache_time=0)
 
 
 #-------------------------------
