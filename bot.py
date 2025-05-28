@@ -179,7 +179,7 @@ async def start_command(client: Client, message: Message):
 #---------------------
 
 
-@Client.on_inline_query()
+@app.on_inline_query()
 async def handle_inline(client, inline_query):
     query = inline_query.query.strip()
     gallery_id = extract_gallery_id(query)
