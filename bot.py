@@ -20,6 +20,7 @@ import aiohttp
 import libtorrent as lt
 import time
 import cloudscraper
+import io
 from pyrogram.types import (
     InlineQueryResultArticle,
     InputTextMessageContent,
