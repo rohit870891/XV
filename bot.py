@@ -152,7 +152,6 @@ async def search_nhentai(query):
     return results
 
 # ---------------- DOWNLOAD PDF ---------------- #
-
 async def download_manga_as_pdf(code, progress_callback=None):
     gallery_url = f"https://nhentai.net/g/{code}/"
     folder = f"nhentai_{code}"
@@ -164,34 +163,20 @@ async def download_manga_as_pdf(code, progress_callback=None):
 
         soup = BeautifulSoup(html, "html.parser")
 
-        # Step 1: Get gallery ID from page
-        match = re.search(r"gallery\/(\d+)", html)
-        if not match:
-            raise Exception("Could not extract gallery ID.")
-        gallery_id = match.group(1)
-
-        # Step 2: Count number of pages
+        # Number of pages = number of thumbnail containers
         num_pages = len(soup.select(".thumb-container"))
-
-        # Step 3: Determine file extension types (webp/jpg/png)
-        ext_list = []
-        for img_tag in soup.select(".thumb-container img"):
-            src = img_tag.get("data-src") or img_tag.get("src")
-            ext = ".jpg"
-            if "png" in src:
-                ext = ".png"
-            elif "webp" in src:
-                ext = ".webp"
-            ext_list.append(ext)
 
         images = []
         for i in range(num_pages):
             page_num = i + 1
-            ext = ext_list[i] if i < len(ext_list) else ".jpg"
-            image_url = f"https://i.nhentai.net/galleries/{gallery_id}/{page_num}{ext}"
+            # Construct URL for full-quality images directly:
+            # Format: https://i.nhentai.net/galleries/<gallery_id>/<page_num>.jpg
+            image_url = f"https://i.nhentai.net/galleries/{code}/{page_num}.jpg"
 
-            filename = os.path.join(folder, f"{page_num:03}{ext}")
+            filename = os.path.join(folder, f"{page_num:03}.jpg")
             async with session.get(image_url) as img_resp:
+                if img_resp.status != 200:
+                    raise Exception(f"Failed to download page {page_num}")
                 with open(filename, 'wb') as f:
                     f.write(await img_resp.read())
 
@@ -200,11 +185,12 @@ async def download_manga_as_pdf(code, progress_callback=None):
 
             images.append(filename)
 
-    # Convert to PDF
+    # Convert images to PDF
     image_objs = [Image.open(img).convert("RGB") for img in images]
     pdf_path = f"{folder}.pdf"
     image_objs[0].save(pdf_path, save_all=True, append_images=image_objs[1:])
 
+    # Clean up images folder
     for img in images:
         os.remove(img)
     os.rmdir(folder)
