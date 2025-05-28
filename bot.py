@@ -196,28 +196,51 @@ async def download_manga_as_pdf(code, progress_callback=None):
 @app.on_callback_query(filters.regex(r"^download_(\d+)$"))
 async def handle_download_button(client: Client, callback_query):
     code = callback_query.matches[0].group(1)
-
-    if callback_query.message:
-        chat_id = callback_query.message.chat.id
-        msg = await callback_query.message.reply(f"📥 Starting download for `{code}`...", quote=True)
-    elif callback_query.inline_message_id:
-        msg = await callback_query.edit_message_text(f"📥 Starting download for `{code}`...")
-        chat_id = callback_query.from_user.id
-    else:
-        return
-
-    async def progress(current, total, stage):
-        percent = int((current / total) * 100)
-        await msg.edit(f"{stage}... {percent}%")
+    pdf_path = None  # Initialize to avoid UnboundLocalError
 
     try:
+        if callback_query.message:
+            chat_id = callback_query.message.chat.id
+            msg = await callback_query.message.reply(f"📥 Starting download for `{code}`...", quote=True)
+            async def progress(current, total, stage):
+                percent = int((current / total) * 100)
+                await msg.edit(f"{stage}... {percent}%")
+        elif callback_query.inline_message_id:
+            chat_id = callback_query.from_user.id
+            await callback_query.edit_message_text(f"📥 Starting download for `{code}`...")
+
+            # Define progress differently for inline since there's no message object
+            async def progress(current, total, stage):
+                percent = int((current / total) * 100)
+                try:
+                    await callback_query.edit_message_text(f"{stage}... {percent}%")
+                except Exception:
+                    pass  # Editing too fast or inline expired
+
+        # Start download
         pdf_path = await download_manga_as_pdf(code, progress)
-        await msg.edit("📤 Uploading PDF...")
-        await client.send_document(chat_id, document=pdf_path, caption=f"📖 Manga: {code}")
+
+        if callback_query.message:
+            await msg.edit("📤 Uploading PDF...")
+            await client.send_document(chat_id, document=pdf_path, caption=f"📖 Manga: {code}")
+        else:
+            await callback_query.edit_message_text("📤 Uploading PDF...")
+            await client.send_document(chat_id, document=pdf_path, caption=f"📖 Manga: {code}")
+
     except Exception as e:
-        await msg.edit(f"❌ Failed: {e}")
+        error_text = f"❌ Failed: {e}"
+        if callback_query.message:
+            try:
+                await msg.edit(error_text)
+            except Exception:
+                pass
+        else:
+            try:
+                await callback_query.edit_message_text(error_text)
+            except Exception:
+                pass
     finally:
-        if os.path.exists(pdf_path):
+        if pdf_path and os.path.exists(pdf_path):
             os.remove(pdf_path)
 
 # ---------------- UPDATE CMD ---------------- #
