@@ -232,7 +232,7 @@ async def search_nhentai(query):
         if thumb and thumb.startswith("//"):
             thumb = "https:" + thumb
 
-        page_url = f"https://nhentai.net/g/{code}/"
+        page_url = f"https://nhentai.xxx/g/{code}/"
 
         button = InlineKeyboardMarkup([
             [InlineKeyboardButton("📥 Download PDF", callback_data=f"download_{code}")]
