@@ -28,7 +28,7 @@ async def root_route_handler(request):
     return web.json_response("Rohit")
 
 async def web_server():
-    web_app = web.Application(client_max_size=30000000)
+    web_app = web.Application(client_max_size=9000000000)
     web_app.add_routes(routes)
     return web_app
 
@@ -44,7 +44,7 @@ class Bot(Client):
         )
         self.LOGGER = LOGGER
 
-    async def start(self):
+    async def start(self, *args, **kwargs):
         await super().start()
         usr_bot_me = await self.get_me()
         self.set_parse_mode(ParseMode.HTML)
