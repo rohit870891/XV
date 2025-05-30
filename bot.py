@@ -101,17 +101,22 @@ async def start_command(client: Client, message: Message):
 @app.on_inline_query()
 async def inline_search(client: Client, inline_query):
     query = inline_query.query.strip()
-    if not query:
-        await inline_query.answer([], switch_pm_text="Type something to search", switch_pm_parameter="start")
-        return
+    page = int(inline_query.offset) if inline_query.offset else 1
 
-    results = await search_nhentai(query)
-    await inline_query.answer(results, cache_time=1, is_personal=True)
+    # Default to homepage if no search query
+    results = await search_nhentai(query or None, page)
+    next_offset = str(page + 1) if len(results) == 10 else ""
+
+    await inline_query.answer(results, cache_time=1, is_personal=True, next_offset=next_offset)
 
 # ---------------- SEARCH FUNCTION ---------------- #
-async def search_nhentai(query):
-    url = f"https://nhentai.net/search/?q={query.replace(' ', '+')}"
+async def search_nhentai(query=None, page=1):
     results = []
+
+    if query:
+        url = f"https://nhentai.net/search/?q={query.replace(' ', '+')}&page={page}"
+    else:
+        url = f"https://nhentai.net/?page={page}"  # Homepage galleries
 
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as response:
