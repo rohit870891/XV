@@ -10,9 +10,10 @@ import aiohttp
 import pyromod.listen
 from pyrogram import Client, filters
 from pyrogram.enums import ParseMode
+
 from pyrogram.types import (
     Message, CallbackQuery, InlineQueryResultArticle,
-    InputTextMessageContent, InlineKeyboardMarkup, InlineKeyboardButton
+    InputTextMessageContent, InlineQueryResultPhoto, InlineKeyboardMarkup, InlineKeyboardButton
 )
 
 # ---------------- CONFIG ---------------- #
@@ -110,13 +111,14 @@ async def inline_search(client: Client, inline_query):
     await inline_query.answer(results, cache_time=1, is_personal=True, next_offset=next_offset)
 
 # ---------------- SEARCH FUNCTION ---------------- #
+
 async def search_nhentai(query=None, page=1):
     results = []
 
     if query:
         url = f"https://nhentai.net/search/?q={query.replace(' ', '+')}&page={page}"
     else:
-        url = f"https://nhentai.net/?page={page}"  # Homepage 
+        url = f"https://nhentai.net/?page={page}"
 
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as response:
@@ -139,20 +141,20 @@ async def search_nhentai(query=None, page=1):
         if thumb.startswith("//"):
             thumb = "https:" + thumb
 
+        caption = f"**{title}**\n🔗 [Read Now](https://nhentai.net/g/{code}/)\n\n`Code:` {code}"
+
         results.append(
-            InlineQueryResultArticle(
-                title=title,
-                description=f"Code: {code}",
+            InlineQueryResultPhoto(
+                photo_url=thumb,
                 thumb_url=thumb,
-                input_message_content=InputTextMessageContent(
-                    message_text=f"{title}\n🔗 [Read Now](https://nhentai.net/g/{code}/)\n\n`Code:` {code}",
-                    disable_web_page_preview=False
-                ),
+                caption=caption,
+                parse_mode="markdown",
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("📥 Download PDF", callback_data=f"download_{code}")]
                 ])
             )
         )
+
     return results
 
 # ---------------- PAGE DOWNLOAD HELPER ---------------- #
@@ -270,7 +272,10 @@ async def handle_download_button(client: Client, callback_query):
     finally:
         if pdf_path and os.path.exists(pdf_path):
             os.remove(pdf_path)
+
+
 # ---------------- UPDATE CMD ---------------- #
+
 @app.on_message(filters.command("update") & filters.user(OWNER_ID))
 async def update_bot(client, message):
     msg = await message.reply_text("🔄 Pulling updates from GitHub...")
