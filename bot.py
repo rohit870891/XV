@@ -148,7 +148,7 @@ async def search_nhentai(query=None, page=1):
                 photo_url=thumb,
                 thumb_url=thumb,
                 caption=caption,
-                parse_mode="markdown",
+                parse_mode=ParseMode.MARKDOWN,
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("📥 Download PDF", callback_data=f"download_{code}")]
                 ])
