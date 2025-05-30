@@ -118,7 +118,7 @@ async def search_nhentai(query=None, page=1):
     if query:
         url = f"https://nhentai.net/search/?q={query.replace(' ', '+')}&page={page}"
     else:
-        url = f"https://nhentai.net/?page={page}"
+        url = f"https://nhentai.net/?page={page}"  # Homepage galleries
 
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as response:
@@ -141,20 +141,20 @@ async def search_nhentai(query=None, page=1):
         if thumb.startswith("//"):
             thumb = "https:" + thumb
 
-        caption = f"**{title}**\n🔗 [Read Now](https://nhentai.net/g/{code}/)\n\n`Code:` {code}"
-
         results.append(
-            InlineQueryResultPhoto(
-                photo_url=thumb,
+            InlineQueryResultArticle(
+                title=title,
+                description=f"Code: {code}",
                 thumb_url=thumb,
-                caption=caption,
-                parse_mode=ParseMode.MARKDOWN,
+                input_message_content=InputTextMessageContent(
+                    message_text=f"**{title}**\n🔗 [Read Now](https://nhentai.net/g/{code}/)\n\n`Code:` {code}",
+                    disable_web_page_preview=False
+                ),
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton("📥 Download PDF", callback_data=f"download_{code}")]
                 ])
             )
         )
-
     return results
 
 # ---------------- PAGE DOWNLOAD HELPER ---------------- #
