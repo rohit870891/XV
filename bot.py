@@ -4,6 +4,7 @@ from datetime import datetime
 from bs4 import BeautifulSoup
 from PIL import Image
 from io import BytesIO
+import subprocess, sys
 
 import aiohttp
 import pyromod.listen
