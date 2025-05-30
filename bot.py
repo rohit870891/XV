@@ -196,9 +196,15 @@ async def download_manga_as_pdf(code, progress_callback=None):
 async def handle_download(client: Client, callback: CallbackQuery):
     code = callback.matches[0].group(1)
     pdf_path = None
+    msg = None  # <== FIX: define msg early to avoid UnboundLocalError
+
     try:
         chat_id = callback.message.chat.id if callback.message else callback.from_user.id
-        msg = await callback.message.reply("📥 Starting download..." if callback.message else None)
+
+        if callback.message:
+            msg = await callback.message.reply("📥 Starting download...")
+        else:
+            await callback.answer("📥 Starting download...")
 
         async def progress(cur, total, stage):
             percent = int((cur / total) * 100)
@@ -208,25 +214,30 @@ async def handle_download(client: Client, callback: CallbackQuery):
                     await msg.edit(txt)
                 else:
                     await callback.edit_message_text(txt)
-            except: pass
+            except:
+                pass
 
         pdf_path = await download_manga_as_pdf(code, progress)
+
         if msg:
             await msg.edit("📤 Uploading PDF...")
         else:
             await callback.edit_message_text("📤 Uploading PDF...")
 
         await client.send_document(chat_id, document=pdf_path, caption=f"📖 Manga: {code}")
+
     except Exception as e:
         err = f"❌ Error: {e}"
-        if msg:
-            await msg.edit(err)
-        else:
-            await callback.edit_message_text(err)
+        try:
+            if msg:
+                await msg.edit(err)
+            else:
+                await callback.edit_message_text(err)
+        except:
+            pass
     finally:
         if pdf_path and os.path.exists(pdf_path):
             os.remove(pdf_path)
-
 
 # ---------------- UPDATE CMD ---------------- #
 
