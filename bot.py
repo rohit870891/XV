@@ -116,7 +116,7 @@ async def search_nhentai(query=None, page=1):
     if query:
         url = f"https://nhentai.net/search/?q={query.replace(' ', '+')}&page={page}"
     else:
-        url = f"https://nhentai.net/?page={page}"  # Homepage galleries
+        url = f"https://nhentai.net/?page={page}"  # Homepage 
 
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as response:
@@ -145,7 +145,7 @@ async def search_nhentai(query=None, page=1):
                 description=f"Code: {code}",
                 thumb_url=thumb,
                 input_message_content=InputTextMessageContent(
-                    message_text=f"**{title}**\n🔗 [Read Now](https://nhentai.net/g/{code}/)\n\n`Code:` {code}",
+                    message_text=f"{title}\n🔗 [Read Now](https://nhentai.net/g/{code}/)\n\n`Code:` {code}",
                     disable_web_page_preview=False
                 ),
                 reply_markup=InlineKeyboardMarkup([
