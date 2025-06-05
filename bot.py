@@ -88,9 +88,17 @@ async def fetch_page_content(url: str) -> str:
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         page = await browser.new_page()
-        await page.goto(url)
-        # Wait for gallery thumbnails to load (adjust selector if needed)
-        await page.wait_for_selector(".gallery_preview, .gallery-thumb", timeout=10000)
+        await page.goto(url, wait_until="networkidle")
+        
+        # try waiting for selector, if timeout, just continue
+        try:
+            await page.wait_for_selector(".gallery_preview", timeout=10000)
+        except Exception:
+            try:
+                await page.wait_for_selector(".gallery-thumb", timeout=10000)
+            except Exception:
+                pass  # no selector found, proceed anyway
+        
         content = await page.content()
         await browser.close()
     return content
