@@ -40,8 +40,7 @@ async def web_server():
 
 # ---------------- BOT INIT ---------------- #
 class Bot(Client):
-    de
-f __init__(self):
+    def __init__(self):
         super().__init__(
             name="nhentaiBot",
             api_id=APP_ID,
