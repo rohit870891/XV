@@ -5,7 +5,7 @@ from bs4 import BeautifulSoup
 from PIL import Image
 from io import BytesIO
 import subprocess, sys
-
+import cloudscraper
 import aiohttp
 import pyromod.listen
 from pyrogram import Client, filters
@@ -168,11 +168,8 @@ async def search_hentaifox(query, page=1):
     results = []
     url = f"https://hentaifox.com/search/?q={query.replace(' ', '+')}&page={page}"
 
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url) as resp:
-            if resp.status != 200:
-                return []
-            html = await resp.text()
+    scraper = cloudscraper.create_scraper()
+    html = scraper.get(url).text
 
     soup = BeautifulSoup(html, "html.parser")
     items = soup.select(".gallery_preview")
@@ -208,11 +205,8 @@ async def search_simplyhentai(query, page=1):
     results = []
     url = f"https://www.simply-hentai.com/search?query={query.replace(' ', '+')}&page={page}"
 
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url) as resp:
-            if resp.status != 200:
-                return []
-            html = await resp.text()
+    scraper = cloudscraper.create_scraper()
+    html = scraper.get(url).text
 
     soup = BeautifulSoup(html, "html.parser")
     items = soup.select(".gallery-thumb")
@@ -224,7 +218,8 @@ async def search_simplyhentai(query, page=1):
         link = a_tag["href"]
         code = link.strip("/").split("/")[-1]
         title = a_tag.get("title", f"Gallery {code}")
-        thumb = item.select_one("img")["src"]
+        img_tag = item.select_one("img")
+        thumb = img_tag.get("src") if img_tag else ""
         if thumb.startswith("//"):
             thumb = "https:" + thumb
 
