@@ -324,53 +324,87 @@ async def download_manga_as_pdf(code, source, progress_callback=None):
 
 # ---------------- CALLBACK HANDLER ---------------- #
 
+from pyrogram import Client, filters
+from pyrogram.types import CallbackQuery
+import os
+
 @app.on_callback_query()
-async def handle_callback(client, callback_query: CallbackQuery):
-    data = callback_query.data
+async def handle_callback(client: Client, callback: CallbackQuery):
+    data = callback.data
     if "_" not in data:
-        return await callback_query.answer("❌ Invalid request.")
+        return await callback.answer("❌ Invalid request.")
 
     source, code = data.split("_", 1)
-    chat_id = callback_query.from_user.id
+    chat_id = callback.from_user.id
 
     msg = None
+    pdf_path = None
+    folder = f"{source}_{code}"
 
     try:
-        await callback_query.answer("📥 Downloading, please wait...")
-
-        # Try to send progress message
-        if callback_query.message:
-            msg = await callback_query.message.reply("📥 Download started...")
+        # Try editing existing message or send new one
+        if callback.message:
+            msg = await callback.message.reply_text("📥 Download started...")
         else:
-            msg = await client.send_message(chat_id, "📥 Download started...")
+            await callback.answer("📥 Download started...")
 
-        async def progress_callback(current, total, stage="Downloading"):
-            percent = int(current / total * 100)
+        # Progress callback
+        async def progress(cur, total, stage):
+            percent = int((cur / total) * 100)
+            txt = f"{stage}... {percent}%"
             try:
-                await msg.edit_text(f"{stage} page {current}/{total} ({percent}%)...")
+                if msg:
+                    await msg.edit_text(txt)
+                else:
+                    await callback.message.edit_text(txt)
             except:
                 pass
 
-        pdf_path = await download_manga_as_pdf(code, source, progress_callback)
+        # Choose download source
+        if source == "nhentai":
+            pdf_path = await download_from_nhentai(code, progress)
+        elif source == "hentaifox":
+            pdf_path = await download_from_hentaifox(code, progress)
+        elif source == "simplyhentai":
+            pdf_path = await download_from_simplyhentai(code, progress)
+        else:
+            return await callback.answer("❌ Unknown source.")
 
-        await msg.edit_text("📤 Uploading PDF to Telegram...")
-        await client.send_document(chat_id, document=pdf_path, caption=f"✅ Done: {code}")
+        if not pdf_path or not os.path.exists(pdf_path):
+            raise Exception("Download failed or file not created.")
+
+        if msg:
+            await msg.edit_text("📤 Uploading PDF...")
+        else:
+            await callback.message.edit_text("📤 Uploading PDF...")
+
+        await client.send_document(chat_id, document=pdf_path, caption=f"📖 Manga: {code}")
 
     except Exception as e:
-        err_msg = f"❌ Error: {e}"
-        if msg:
-            await msg.edit_text(err_msg)
-        else:
-            await client.send_message(chat_id, err_msg)
+        error_text = f"❌ Error: {str(e)}"
+        try:
+            if msg:
+                await msg.edit_text(error_text)
+            else:
+                await callback.message.edit_text(error_text)
+        except:
+            pass
+
     finally:
-        # Cleanup
-        folder = f"{source}_{code}"
-        if os.path.exists(pdf_path):
-            os.remove(pdf_path)
+        # Clean up downloaded files and folders
+        if pdf_path and os.path.exists(pdf_path):
+            try:
+                os.remove(pdf_path)
+            except:
+                pass
+
         if os.path.isdir(folder):
-            for file in os.listdir(folder):
-                os.remove(os.path.join(folder, file))
-            os.rmdir(folder)
+            try:
+                for file in os.listdir(folder):
+                    os.remove(os.path.join(folder, file))
+                os.rmdir(folder)
+            except:
+                pass
 
 # ---------------- UPDATE CMD ---------------- #
 
