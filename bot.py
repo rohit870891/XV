@@ -9,6 +9,7 @@ import subprocess, sys
 import aiohttp
 import pyromod.listen
 from pyrogram import Client, filters
+from pyrogram.types import CallbackQuery
 from pyrogram.enums import ParseMode
 from pyrogram.types import (
     Message, CallbackQuery, InlineQueryResultArticle,
@@ -76,7 +77,8 @@ class Bot(Client):
 
 app = Bot()
 
-# ---------------- START HANDLER ---------------- #
+
+# ---------------- START COMMAND ---------------- #
 @app.on_message(filters.command('start') & filters.private)
 async def start_command(_, message: Message):
     keyboard = InlineKeyboardMarkup([
@@ -87,8 +89,8 @@ async def start_command(_, message: Message):
         photo=START_PIC,
         caption=START_MSG.format(
             first=message.from_user.first_name,
-            last=message.from_user.last_name,
-            username=('@' + message.from_user.username) if message.from_user.username else None,
+            last=message.from_user.last_name or "",
+            username=('@' + message.from_user.username) if message.from_user.username else "",
             mention=message.from_user.mention,
             id=message.from_user.id
         ),
@@ -97,14 +99,21 @@ async def start_command(_, message: Message):
 
 # ---------------- INLINE SEARCH ---------------- #
 @app.on_inline_query()
-async def inline_search(client: Client, inline_query):
+async def inline_search(client: Client, inline_query: InlineQuery):
     query = inline_query.query.strip()
     page = int(inline_query.offset) if inline_query.offset else 1
 
-    results = await search_nhentai(query or None, page)
+    if query.startswith("fox:"):
+        results = await search_hentaifox(query[4:], page)
+    elif query.startswith("simply:"):
+        results = await search_simplyhentai(query[7:], page)
+    else:
+        results = await search_nhentai(query or None, page)
+
     next_offset = str(page + 1) if len(results) == 10 else ""
     await inline_query.answer(results, cache_time=1, is_personal=True, next_offset=next_offset)
 
+# ---------------- SEARCH FUNCTIONS ---------------- #
 async def search_nhentai(query=None, page=1):
     results = []
     url = f"https://nhentai.net/search/?q={query.replace(' ', '+')}&page={page}" if query else f"https://nhentai.net/?page={page}"
@@ -136,13 +145,93 @@ async def search_nhentai(query=None, page=1):
                     disable_web_page_preview=False
                 ),
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("📥 Download PDF", callback_data=f"download_{code}")]
+                    [InlineKeyboardButton("📥 Download PDF", callback_data=f"nhentai_{code}")]
                 ])
             )
         )
     return results
 
-# ---------------- PAGE DOWNLOADER ---------------- #
+async def search_hentaifox(query, page=1):
+    results = []
+    url = f"https://hentaifox.com/search/?q={query.replace(' ', '+')}&page={page}"
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as resp:
+            if resp.status != 200:
+                return []
+            html = await resp.text()
+
+    soup = BeautifulSoup(html, "html.parser")
+    items = soup.select(".gallery_preview")
+
+    for item in items[:10]:
+        a_tag = item.find("a")
+        if not a_tag:
+            continue
+        link = a_tag["href"]
+        code = link.strip("/").split("/")[-1]
+        title = item.select_one(".caption").text.strip() if item.select_one(".caption") else f"Gallery {code}"
+        thumb = item.select_one("img")["data-src"]
+        if thumb.startswith("//"):
+            thumb = "https:" + thumb
+
+        results.append(
+            InlineQueryResultArticle(
+                title=title,
+                description=f"Code: {code}",
+                thumb_url=thumb,
+                input_message_content=InputTextMessageContent(
+                    message_text=f"**{title}**\n🔗 [Read Now](https://hentaifox.com/gallery/{code}/)\n\n`Code:` {code}",
+                    disable_web_page_preview=False
+                ),
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📥 Download PDF", callback_data=f"fox_{code}")]
+                ])
+            )
+        )
+    return results
+
+async def search_simplyhentai(query, page=1):
+    results = []
+    url = f"https://www.simply-hentai.com/search?query={query.replace(' ', '+')}&page={page}"
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as resp:
+            if resp.status != 200:
+                return []
+            html = await resp.text()
+
+    soup = BeautifulSoup(html, "html.parser")
+    items = soup.select(".gallery-thumb")
+
+    for item in items[:10]:
+        a_tag = item.find("a")
+        if not a_tag:
+            continue
+        link = a_tag["href"]
+        code = link.strip("/").split("/")[-1]
+        title = a_tag.get("title", f"Gallery {code}")
+        thumb = item.select_one("img")["src"]
+        if thumb.startswith("//"):
+            thumb = "https:" + thumb
+
+        results.append(
+            InlineQueryResultArticle(
+                title=title,
+                description=f"Code: {code}",
+                thumb_url=thumb,
+                input_message_content=InputTextMessageContent(
+                    message_text=f"**{title}**\n🔗 [Read Now](https://www.simply-hentai.com{link})\n\n`Code:` {code}",
+                    disable_web_page_preview=False
+                ),
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📥 Download PDF", callback_data=f"simply_{code}")]
+                ])
+            )
+        )
+    return results
+
+# ---------------- DOWNLOAD FUNCTIONS ---------------- #
 async def download_page(session, url, filename):
     headers = {"User-Agent": "Mozilla/5.0"}
     async with session.get(url, headers=headers) as resp:
@@ -151,94 +240,123 @@ async def download_page(session, url, filename):
         with open(filename, "wb") as f:
             f.write(await resp.read())
 
-# ---------------- PDF GENERATOR ---------------- #
-async def download_manga_as_pdf(code, progress_callback=None):
-    api_url = f"https://nhentai.net/api/gallery/{code}"
-    folder = f"nhentai_{code}"
+async def download_manga_as_pdf(code, source, progress_callback=None):
+    folder = f"{source}_{code}"
     os.makedirs(folder, exist_ok=True)
+    image_paths = []
 
     headers = {"User-Agent": "Mozilla/5.0"}
 
     async with aiohttp.ClientSession() as session:
-        async with session.get(api_url, headers=headers) as resp:
-            if resp.status != 200:
-                raise Exception("Gallery not found.")
-            data = await resp.json()
+        if source == "nhentai":
+            api_url = f"https://nhentai.net/api/gallery/{code}"
+            async with session.get(api_url, headers=headers) as resp:
+                if resp.status != 200:
+                    raise Exception("Gallery not found.")
+                data = await resp.json()
 
-        num_pages = len(data["images"]["pages"])
-        ext_map = {"j": "jpg", "p": "png", "g": "gif", "w": "webp"}
-        media_id = data["media_id"]
-        image_paths = []
+            num_pages = len(data["images"]["pages"])
+            ext_map = {"j": "jpg", "p": "png", "g": "gif", "w": "webp"}
+            media_id = data["media_id"]
 
-        for i, page in enumerate(data["images"]["pages"], start=1):
-            ext = ext_map.get(page["t"], "jpg")
-            url = f"https://i.nhentai.net/galleries/{media_id}/{i}.{ext}"
-            path = os.path.join(folder, f"{i:03}.{ext}")
-            await download_page(session, url, path)
-            image_paths.append(path)
-            if progress_callback:
-                await progress_callback(i, num_pages, "Downloading")
+            for i, page in enumerate(data["images"]["pages"], start=1):
+                ext = ext_map.get(page["t"], "jpg")
+                url = f"https://i.nhentai.net/galleries/{media_id}/{i}.{ext}"
+                path = os.path.join(folder, f"{i:03}.{ext}")
+                await download_page(session, url, path)
+                image_paths.append(path)
+                if progress_callback:
+                    await progress_callback(i, num_pages, "Downloading")
 
-    # Generate PDF without loading all images in memory
-    pdf_path = f"{folder}.pdf"
-    first_img = Image.open(image_paths[0]).convert("RGB")
-    with open(pdf_path, "wb") as f:
-        first_img.save(f, format="PDF", save_all=True, append_images=[
-            Image.open(p).convert("RGB") for p in image_paths[1:]
-        ])
+        elif source == "fox":
+            gallery_url = f"https://hentaifox.com/gallery/{code}/"
+            async with session.get(gallery_url, headers=headers) as resp:
+                if resp.status != 200:
+                    raise Exception("Gallery not found.")
+                html = await resp.text()
 
-    for img in image_paths:
-        os.remove(img)
-    os.rmdir(folder)
-    return pdf_path
+            soup = BeautifulSoup(html, "html.parser")
+            thumbs = soup.select(".gallery_thumb img")
+            num_pages = len(thumbs)
+
+            for i, img in enumerate(thumbs, start=1):
+                thumb_url = img["data-src"]
+                if thumb_url.startswith("//"):
+                    thumb_url = "https:" + thumb_url
+                path = os.path.join(folder, f"{i:03}.jpg")
+                await download_page(session, thumb_url, path)
+                image_paths.append(path)
+                if progress_callback:
+                    await progress_callback(i, num_pages, "Downloading")
+
+        elif source == "simply":
+            gallery_url = f"https://www.simply-hentai.com/gallery/{code}/"
+            async with session.get(gallery_url, headers=headers) as resp:
+                if resp.status != 200:
+                    raise Exception("Gallery not found.")
+                html = await resp.text()
+
+            soup = BeautifulSoup(html, "html.parser")
+            thumbs = soup.select(".gallery-thumb img")
+            num_pages = len(thumbs)
+
+            for i, img in enumerate(thumbs, start=1):
+                thumb_url = img["src"]
+                if thumb_url.startswith("//"):
+                    thumb_url = "https:" + thumb_url
+                path = os.path.join(folder, f"{i:03}.jpg")
+                await download_page(session, thumb_url, path)
+                image_paths.append(path)
+                if progress_callback:
+                    await progress_callback(i, num_pages, "Downloading")
+
+        else:
+            raise Exception("Unsupported source.")
+
+    # Generate0
+
+
 
 # ---------------- CALLBACK HANDLER ---------------- #
-@app.on_callback_query(filters.regex(r"^download_(\d+)$"))
-async def handle_download(client: Client, callback: CallbackQuery):
-    code = callback.matches[0].group(1)
-    pdf_path = None
-    msg = None  # <== FIX: define msg early to avoid UnboundLocalError
+
+@app.on_callback_query()
+async def handle_callback(client, callback_query: CallbackQuery):
+    data = callback_query.data
+    await callback_query.answer("Downloading, please wait...", show_alert=False)
+
+    if "_" not in data:
+        return await callback_query.message.edit_text("❌ Invalid request.")
+
+    source, code = data.split("_", 1)
+    message = callback_query.message
+
+    progress_msg = await message.reply_text("📥 Download started...")
+
+    async def progress_callback(current, total, action="Downloading"):
+        percent = int(current / total * 100)
+        await progress_msg.edit_text(f"{action} page {current}/{total} ({percent}%)...")
 
     try:
-        chat_id = callback.message.chat.id if callback.message else callback.from_user.id
+        pdf_path = await download_manga_as_pdf(code, source, progress_callback)
 
-        if callback.message:
-            msg = await callback.message.reply("📥 Starting download...")
-        else:
-            await callback.answer("📥 Starting download...")
+        await progress_msg.edit_text("📤 Uploading PDF to Telegram...")
+        await message.reply_document(
+            document=pdf_path,
+            caption=f"✅ Download complete for `{code}` from `{source}`.",
+            quote=True
+        )
+        await progress_msg.delete()
 
-        async def progress(cur, total, stage):
-            percent = int((cur / total) * 100)
-            txt = f"{stage}... {percent}%"
-            try:
-                if msg:
-                    await msg.edit(txt)
-                else:
-                    await callback.edit_message_text(txt)
-            except:
-                pass
-
-        pdf_path = await download_manga_as_pdf(code, progress)
-
-        if msg:
-            await msg.edit("📤 Uploading PDF...")
-        else:
-            await callback.edit_message_text("📤 Uploading PDF...")
-
-        await client.send_document(chat_id, document=pdf_path, caption=f"📖 Manga: {code}")
+        # Clean up files
+        os.remove(pdf_path)
+        folder = f"{source}_{code}"
+        if os.path.exists(folder):
+            for file in os.listdir(folder):
+                os.remove(os.path.join(folder, file))
+            os.rmdir(folder)
 
     except Exception as e:
-        err = f"❌ Error: {e}"
-        try:
-            if msg:
-                await msg.edit(err)
-            else:
-                await callback.edit_message_text(err)
-        except:
-            pass
-    finally:
-        if pdf_path and os.path.exists(pdf_path):
-            os.remove(pdf_path)
+        await progress_msg.edit_text(f"❌ Failed: `{str(e)}`")
 
 # ---------------- UPDATE CMD ---------------- #
 
