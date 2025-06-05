@@ -383,7 +383,7 @@ async def handle_callback(client: Client, callback: CallbackQuery):
         if progress_msg:
             await progress_msg.edit_text("📤 Uploading PDF...")
 
-        await client.send_document(chat_id, pdf_path, caption=f"📖 Manga: `{code}`", parse_mode="markdown")
+        await client.send_document(chat_id, pdf_path, caption=f"📖 Manga: `{code}`", parse_mode=ParseMode.MARKDOWN)
 
     except Exception as e:
         if progress_msg:
