@@ -166,10 +166,15 @@ async def search_nhentai(query=None, page=1):
 
 async def search_hentaifox(query, page=1):
     results = []
+    query = query.strip()
     url = f"https://hentaifox.com/search/?q={query.replace(' ', '+')}&page={page}"
 
     scraper = cloudscraper.create_scraper()
-    html = scraper.get(url).text
+    try:
+        html = scraper.get(url).text
+    except Exception as e:
+        print(f"[HentaiFox] Error: {e}")
+        return []
 
     soup = BeautifulSoup(html, "html.parser")
     items = soup.select(".gallery_preview")
@@ -203,10 +208,15 @@ async def search_hentaifox(query, page=1):
 
 async def search_simplyhentai(query, page=1):
     results = []
+    query = query.strip()
     url = f"https://www.simply-hentai.com/search?query={query.replace(' ', '+')}&page={page}"
 
     scraper = cloudscraper.create_scraper()
-    html = scraper.get(url).text
+    try:
+        html = scraper.get(url).text
+    except Exception as e:
+        print(f"[SimplyHentai] Error: {e}")
+        return []
 
     soup = BeautifulSoup(html, "html.parser")
     items = soup.select(".gallery-thumb")
@@ -218,8 +228,7 @@ async def search_simplyhentai(query, page=1):
         link = a_tag["href"]
         code = link.strip("/").split("/")[-1]
         title = a_tag.get("title", f"Gallery {code}")
-        img_tag = item.select_one("img")
-        thumb = img_tag.get("src") if img_tag else ""
+        thumb = item.select_one("img")["src"]
         if thumb.startswith("//"):
             thumb = "https:" + thumb
 
