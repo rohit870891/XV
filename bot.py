@@ -327,66 +327,79 @@ async def download_manga_as_pdf(code, source, progress_callback=None):
 from pyrogram import Client, filters
 from pyrogram.types import CallbackQuery
 import os
+from reportlab.pdfgen import canvas
+from PIL import Image
+import aiofiles
+import shutil
 
-@app.on_callback_query(filters.regex(r"^(nhentai|hentaifox|simplyhentai)_(\d+)$"))
+@app.on_callback_query(filters.regex(r"^(nhentai|fox|simply)_(\d+)$"))
 async def handle_callback(client: Client, callback: CallbackQuery):
     source, code = callback.data.split("_", 1)
     chat_id = callback.from_user.id
 
-    msg = None
-    pdf_path = None
+    # Inline result fallback
+    reply_message = callback.message or callback.inline_message_id
+    progress_msg = None
     folder = f"{source}_{code}"
+    pdf_path = f"{folder}.pdf"
 
     try:
-        # Fallback messaging
+        # Start message (fallback for inline result)
         if callback.message:
-            msg = await callback.message.reply("📥 Download started...")
+            progress_msg = await callback.message.reply("📥 Download started...")
         else:
             await callback.answer("📥 Download started...")
 
-        # Progress display
-        async def progress(cur, total, stage):
-            percent = int((cur / total) * 100)
-            txt = f"{stage}... {percent}%"
-            try:
-                if msg:
-                    await msg.edit_text(txt)
-            except:
-                pass
+        # Progress function
+        async def progress(current, total, stage):
+            pct = int((current / total) * 100)
+            txt = f"{stage}... {pct}% ({current}/{total})"
+            if progress_msg:
+                try:
+                    await progress_msg.edit_text(txt)
+                except:
+                    pass
 
-        # Route to correct download function
-        if source == "nhentai":
-            pdf_path = await download_from_nhentai(code, progress)
-        elif source == "hentaifox":
-            pdf_path = await download_from_hentaifox(code, progress)
-        elif source == "simplyhentai":
-            pdf_path = await download_from_simplyhentai(code, progress)
+        # Download images using your function
+        await download_manga_as_pdf(code, source, progress)
+
+        # Convert to PDF
+        files = sorted(os.listdir(folder))
+        image_paths = [os.path.join(folder, f) for f in files if f.endswith(('.jpg', '.png', '.jpeg', '.webp'))]
+        if not image_paths:
+            raise Exception("❌ No images downloaded.")
+
+        # Create PDF using PIL
+        image_list = [Image.open(img).convert("RGB") for img in image_paths]
+        first_img = image_list[0]
+        if len(image_list) > 1:
+            first_img.save(pdf_path, save_all=True, append_images=image_list[1:])
         else:
-            return await callback.answer("❌ Unknown source.")
+            first_img.save(pdf_path)
 
-        if not pdf_path or not os.path.exists(pdf_path):
-            raise Exception("PDF generation failed.")
+        if not os.path.exists(pdf_path):
+            raise Exception("❌ PDF conversion failed.")
 
-        if msg:
-            await msg.edit_text("📤 Uploading PDF...")
+        if progress_msg:
+            await progress_msg.edit_text("📤 Uploading PDF...")
 
-        await client.send_document(chat_id, pdf_path, caption=f"📖 Manga: {code}")
+        await client.send_document(chat_id, pdf_path, caption=f"📖 Manga: `{code}`", parse_mode="markdown")
 
     except Exception as e:
-        if msg:
-            await msg.edit_text(f"❌ Error: {str(e)}")
+        if progress_msg:
+            await progress_msg.edit_text(f"❌ Error: {str(e)}")
+        else:
+            await callback.answer("❌ Error occurred.")
 
     finally:
-        # Clean up
-        if pdf_path and os.path.exists(pdf_path):
-            os.remove(pdf_path)
-        if os.path.isdir(folder):
-            try:
-                for file in os.listdir(folder):
-                    os.remove(os.path.join(folder, file))
-                os.rmdir(folder)
-            except:
-                pass
+        # Cleanup
+        try:
+            if os.path.exists(pdf_path):
+                os.remove(pdf_path)
+            if os.path.exists(folder):
+                shutil.rmtree(folder)
+        except:
+            pass
 
 # ---------------- UPDATE CMD ---------------- #
 
