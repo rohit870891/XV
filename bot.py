@@ -19,6 +19,7 @@ from pyrogram.types import (
     CallbackQuery
 )
 from pyrogram.enums import ParseMode
+from playwright.async_api import async_playwright
 
 
 # ---------------- CONFIG ---------------- #
@@ -81,6 +82,19 @@ class Bot(Client):
             loop.run_until_complete(self.stop())
 
 app = Bot()
+
+
+async def fetch_page_content(url: str) -> str:
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page()
+        await page.goto(url)
+        # Wait for gallery thumbnails to load (adjust selector if needed)
+        await page.wait_for_selector(".gallery_preview, .gallery-thumb", timeout=10000)
+        content = await page.content()
+        await browser.close()
+    return content
+
 
 # ---------------- START COMMAND ---------------- #
 @app.on_message(filters.command('start') & filters.private)
@@ -165,67 +179,46 @@ async def search_nhentai(query=None, page=1):
     return results
 
 async def search_hentaifox(query, page=1):
-    url = f"https://hentaifox.com/search/?q={query}&page={page}"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                      "(KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Referer": "https://hentaifox.com/",
-    }
-
-    async with aiohttp.ClientSession(headers=headers) as session:
-        async with session.get(url) as resp:
-            if resp.status != 200:
-                return []
-            html = await resp.text()
-
-    soup = BeautifulSoup(html, "html.parser")
-    items = soup.select(".gallery_preview")  # check if this class still exists
-
     results = []
+    search_url = f"https://hentaifox.com/search/?q={query}&page={page}"
+    html = await fetch_page_content(search_url)
+    soup = BeautifulSoup(html, "html.parser")
+    items = soup.select(".gallery_preview")
+
     for item in items[:10]:
         a_tag = item.find("a")
         if not a_tag:
             continue
         link = a_tag["href"]
         code = link.strip("/").split("/")[-1]
-
-        caption_tag = item.select_one(".caption")
-        title = caption_tag.text.strip() if caption_tag else f"Gallery {code}"
-
-        img_tag = item.select_one("img")
-        thumb = img_tag.get("data-src") or img_tag.get("src")
-        if thumb and thumb.startswith("//"):
+        title = item.select_one(".caption").text.strip() if item.select_one(".caption") else f"Gallery {code}"
+        thumb = item.select_one("img")["data-src"] or item.select_one("img")["src"]
+        if thumb.startswith("//"):
             thumb = "https:" + thumb
 
-        results.append({
-            "title": title,
-            "code": code,
-            "link": link,
-            "thumbnail": thumb
-        })
-
+        results.append(
+            InlineQueryResultArticle(
+                title=title,
+                description=f"Code: {code}",
+                thumb_url=thumb,
+                input_message_content=InputTextMessageContent(
+                    message_text=f"**{title}**\n🔗 [Read Now](https://hentaifox.com/gallery/{code}/)\n\n`Code:` {code}",
+                    disable_web_page_preview=True
+                ),
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📥 Download PDF", callback_data=f"fox_{code}")]
+                ])
+            )
+        )
     return results
 
 async def search_simplyhentai(query, page=1):
-    url = f"https://www.simply-hentai.com/search?query={query}&page={page}"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                      "(KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Referer": "https://www.simply-hentai.com/",
-    }
-
-    async with aiohttp.ClientSession(headers=headers) as session:
-        async with session.get(url) as resp:
-            if resp.status != 200:
-                return []
-            html = await resp.text()
-
-    soup = BeautifulSoup(html, "html.parser")
-    items = soup.select(".gallery-thumb")  # Verify this selector matches current site
-
     results = []
+    search_url = f"https://www.simply-hentai.com/search?query={query}&page={page}"
+    html = await fetch_page_content(search_url)
+    soup = BeautifulSoup(html, "html.parser")
+    items = soup.select(".gallery-thumb")
+
     for item in items[:10]:
         a_tag = item.find("a")
         if not a_tag:
@@ -233,19 +226,24 @@ async def search_simplyhentai(query, page=1):
         link = a_tag["href"]
         code = link.strip("/").split("/")[-1]
         title = a_tag.get("title", f"Gallery {code}")
-
-        img_tag = item.select_one("img")
-        thumb = img_tag.get("src")
-        if thumb and thumb.startswith("//"):
+        thumb = item.select_one("img")["src"]
+        if thumb.startswith("//"):
             thumb = "https:" + thumb
 
-        results.append({
-            "title": title,
-            "code": code,
-            "link": link,
-            "thumbnail": thumb
-        })
-
+        results.append(
+            InlineQueryResultArticle(
+                title=title,
+                description=f"Code: {code}",
+                thumb_url=thumb,
+                input_message_content=InputTextMessageContent(
+                    message_text=f"**{title}**\n🔗 [Read Now](https://www.simply-hentai.com{link})\n\n`Code:` {code}",
+                    disable_web_page_preview=True
+                ),
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📥 Download PDF", callback_data=f"simply_{code}")]
+                ])
+            )
+        )
     return results
 
 # ---------------- DOWNLOAD FUNCTIONS ---------------- #
