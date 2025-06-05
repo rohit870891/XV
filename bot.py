@@ -327,41 +327,50 @@ async def download_manga_as_pdf(code, source, progress_callback=None):
 @app.on_callback_query()
 async def handle_callback(client, callback_query: CallbackQuery):
     data = callback_query.data
-    await callback_query.answer("Downloading, please wait...", show_alert=False)
-
     if "_" not in data:
-        return await callback_query.message.edit_text("❌ Invalid request.")
+        return await callback_query.answer("❌ Invalid request.")
 
     source, code = data.split("_", 1)
-    message = callback_query.message
+    chat_id = callback_query.from_user.id
 
-    progress_msg = await message.reply_text("📥 Download started...")
-
-    async def progress_callback(current, total, action="Downloading"):
-        percent = int(current / total * 100)
-        await progress_msg.edit_text(f"{action} page {current}/{total} ({percent}%)...")
+    msg = None
 
     try:
+        await callback_query.answer("📥 Downloading, please wait...")
+
+        # Try to send progress message
+        if callback_query.message:
+            msg = await callback_query.message.reply("📥 Download started...")
+        else:
+            msg = await client.send_message(chat_id, "📥 Download started...")
+
+        async def progress_callback(current, total, stage="Downloading"):
+            percent = int(current / total * 100)
+            try:
+                await msg.edit_text(f"{stage} page {current}/{total} ({percent}%)...")
+            except:
+                pass
+
         pdf_path = await download_manga_as_pdf(code, source, progress_callback)
 
-        await progress_msg.edit_text("📤 Uploading PDF to Telegram...")
-        await message.reply_document(
-            document=pdf_path,
-            caption=f"✅ Download complete for `{code}` from `{source}`.",
-            quote=True
-        )
-        await progress_msg.delete()
+        await msg.edit_text("📤 Uploading PDF to Telegram...")
+        await client.send_document(chat_id, document=pdf_path, caption=f"✅ Done: {code}")
 
-        # Clean up files
-        os.remove(pdf_path)
+    except Exception as e:
+        err_msg = f"❌ Error: {e}"
+        if msg:
+            await msg.edit_text(err_msg)
+        else:
+            await client.send_message(chat_id, err_msg)
+    finally:
+        # Cleanup
         folder = f"{source}_{code}"
-        if os.path.exists(folder):
+        if os.path.exists(pdf_path):
+            os.remove(pdf_path)
+        if os.path.isdir(folder):
             for file in os.listdir(folder):
                 os.remove(os.path.join(folder, file))
             os.rmdir(folder)
-
-    except Exception as e:
-        await progress_msg.edit_text(f"❌ Failed: `{str(e)}`")
 
 # ---------------- UPDATE CMD ---------------- #
 
