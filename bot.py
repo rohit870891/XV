@@ -328,13 +328,9 @@ from pyrogram import Client, filters
 from pyrogram.types import CallbackQuery
 import os
 
-@app.on_callback_query()
+@app.on_callback_query(filters.regex(r"^(nhentai|hentaifox|simplyhentai)_(\d+)$"))
 async def handle_callback(client: Client, callback: CallbackQuery):
-    data = callback.data
-    if "_" not in data:
-        return await callback.answer("❌ Invalid request.")
-
-    source, code = data.split("_", 1)
+    source, code = callback.data.split("_", 1)
     chat_id = callback.from_user.id
 
     msg = None
@@ -342,25 +338,23 @@ async def handle_callback(client: Client, callback: CallbackQuery):
     folder = f"{source}_{code}"
 
     try:
-        # Try editing existing message or send new one
+        # Fallback messaging
         if callback.message:
-            msg = await callback.message.reply_text("📥 Download started...")
+            msg = await callback.message.reply("📥 Download started...")
         else:
             await callback.answer("📥 Download started...")
 
-        # Progress callback
+        # Progress display
         async def progress(cur, total, stage):
             percent = int((cur / total) * 100)
             txt = f"{stage}... {percent}%"
             try:
                 if msg:
                     await msg.edit_text(txt)
-                else:
-                    await callback.message.edit_text(txt)
             except:
                 pass
 
-        # Choose download source
+        # Route to correct download function
         if source == "nhentai":
             pdf_path = await download_from_nhentai(code, progress)
         elif source == "hentaifox":
@@ -371,33 +365,21 @@ async def handle_callback(client: Client, callback: CallbackQuery):
             return await callback.answer("❌ Unknown source.")
 
         if not pdf_path or not os.path.exists(pdf_path):
-            raise Exception("Download failed or file not created.")
+            raise Exception("PDF generation failed.")
 
         if msg:
             await msg.edit_text("📤 Uploading PDF...")
-        else:
-            await callback.message.edit_text("📤 Uploading PDF...")
 
-        await client.send_document(chat_id, document=pdf_path, caption=f"📖 Manga: {code}")
+        await client.send_document(chat_id, pdf_path, caption=f"📖 Manga: {code}")
 
     except Exception as e:
-        error_text = f"❌ Error: {str(e)}"
-        try:
-            if msg:
-                await msg.edit_text(error_text)
-            else:
-                await callback.message.edit_text(error_text)
-        except:
-            pass
+        if msg:
+            await msg.edit_text(f"❌ Error: {str(e)}")
 
     finally:
-        # Clean up downloaded files and folders
+        # Clean up
         if pdf_path and os.path.exists(pdf_path):
-            try:
-                os.remove(pdf_path)
-            except:
-                pass
-
+            os.remove(pdf_path)
         if os.path.isdir(folder):
             try:
                 for file in os.listdir(folder):
