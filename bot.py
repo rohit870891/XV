@@ -82,14 +82,22 @@ class Bot(Client):
 
 app = Bot()
 
-
 # ---------------- START COMMAND ---------------- #
 @app.on_message(filters.command('start') & filters.private)
 async def start_command(_, message: Message):
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔎 Search Manga", switch_inline_query_current_chat="")],
-        [InlineKeyboardButton("💻 Contact Developer", url="https://t.me/rohit_1888")]
+        [
+            InlineKeyboardButton("🔍 NHentai", switch_inline_query_current_chat=""),
+            InlineKeyboardButton("🦊 HentaiFox", switch_inline_query_current_chat="fox:")
+        ],
+        [
+            InlineKeyboardButton("📚 SimplyHentai", switch_inline_query_current_chat="simply:")
+        ],
+        [
+            InlineKeyboardButton("💻 Contact Developer", url="https://t.me/rohit_1888")
+        ]
     ])
+
     await message.reply_photo(
         photo=START_PIC,
         caption=START_MSG.format(
