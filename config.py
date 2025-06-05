@@ -6,14 +6,14 @@ from logging.handlers import RotatingFileHandler
 #rohit_1888 on Tg
 #--------------------------------------------
 #Bot token @Botfather
-TG_BOT_TOKEN = os.environ.get("TG_BOT_TOKEN", "7382577497:AAEmSfOzKljsuk0s_eA98yFgIrrDpcZQn6g")
+TG_BOT_TOKEN = os.environ.get("TG_BOT_TOKEN", "7382577497:AAFYkBk57obfK5QxeT6KFus8IWgFtVawizc")
 APP_ID = int(os.environ.get("APP_ID", "22469064")) #Your API ID from my.telegram.org
 API_HASH = os.environ.get("API_HASH", "c05481978a217fdb11fa6774b15cba32") #Your API Hash from my.telegram.org
 #--------------------------------------------
 
 OWNER_ID = int(os.environ.get("OWNER_ID", "7328629001")) # Owner id
 #--------------------------------------------
-PORT = os.environ.get("PORT", "8009")
+PORT = os.environ.get("PORT", "8010")
 #--------------------------------------------
 DB_URI = os.environ.get("DATABASE_URL", "mongodb+srv://YatoPro:ProYato@cluster0.zeaqrcy.mongodb.net/?retryWrites=true&w=majority")
 DB_NAME = os.environ.get("DATABASE_NAME", "Cluooo")
