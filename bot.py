@@ -165,62 +165,67 @@ async def search_nhentai(query=None, page=1):
     return results
 
 async def search_hentaifox(query, page=1):
-    results = []
-    query = query.strip()
-    url = f"https://hentaifox.com/search/?q={query.replace(' ', '+')}&page={page}"
+    url = f"https://hentaifox.com/search/?q={query}&page={page}"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": "https://hentaifox.com/",
+    }
 
-    scraper = cloudscraper.create_scraper()
-    try:
-        html = scraper.get(url).text
-    except Exception as e:
-        print(f"[HentaiFox] Error: {e}")
-        return []
+    async with aiohttp.ClientSession(headers=headers) as session:
+        async with session.get(url) as resp:
+            if resp.status != 200:
+                return []
+            html = await resp.text()
 
     soup = BeautifulSoup(html, "html.parser")
-    items = soup.select(".gallery_preview")
+    items = soup.select(".gallery_preview")  # check if this class still exists
 
+    results = []
     for item in items[:10]:
         a_tag = item.find("a")
         if not a_tag:
             continue
         link = a_tag["href"]
         code = link.strip("/").split("/")[-1]
-        title = item.select_one(".caption").text.strip() if item.select_one(".caption") else f"Gallery {code}"
-        thumb = item.select_one("img")["data-src"]
-        if thumb.startswith("//"):
+
+        caption_tag = item.select_one(".caption")
+        title = caption_tag.text.strip() if caption_tag else f"Gallery {code}"
+
+        img_tag = item.select_one("img")
+        thumb = img_tag.get("data-src") or img_tag.get("src")
+        if thumb and thumb.startswith("//"):
             thumb = "https:" + thumb
 
-        results.append(
-            InlineQueryResultArticle(
-                title=title,
-                description=f"Code: {code}",
-                thumb_url=thumb,
-                input_message_content=InputTextMessageContent(
-                    message_text=f"**{title}**\n🔗 [Read Now](https://hentaifox.com/gallery/{code}/)\n\n`Code:` {code}",
-                    disable_web_page_preview=False
-                ),
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("📥 Download PDF", callback_data=f"fox_{code}")]
-                ])
-            )
-        )
+        results.append({
+            "title": title,
+            "code": code,
+            "link": link,
+            "thumbnail": thumb
+        })
+
     return results
 
 async def search_simplyhentai(query, page=1):
-    results = []
-    query = query.strip()
-    url = f"https://www.simply-hentai.com/search?query={query.replace(' ', '+')}&page={page}"
+    url = f"https://www.simply-hentai.com/search?query={query}&page={page}"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": "https://www.simply-hentai.com/",
+    }
 
-    scraper = cloudscraper.create_scraper()
-    try:
-        html = scraper.get(url).text
-    except Exception as e:
-        print(f"[SimplyHentai] Error: {e}")
-        return []
+    async with aiohttp.ClientSession(headers=headers) as session:
+        async with session.get(url) as resp:
+            if resp.status != 200:
+                return []
+            html = await resp.text()
 
     soup = BeautifulSoup(html, "html.parser")
-    items = soup.select(".gallery-thumb")
+    items = soup.select(".gallery-thumb")  # Verify this selector matches current site
 
+    results = []
     for item in items[:10]:
         a_tag = item.find("a")
         if not a_tag:
@@ -228,24 +233,19 @@ async def search_simplyhentai(query, page=1):
         link = a_tag["href"]
         code = link.strip("/").split("/")[-1]
         title = a_tag.get("title", f"Gallery {code}")
-        thumb = item.select_one("img")["src"]
-        if thumb.startswith("//"):
+
+        img_tag = item.select_one("img")
+        thumb = img_tag.get("src")
+        if thumb and thumb.startswith("//"):
             thumb = "https:" + thumb
 
-        results.append(
-            InlineQueryResultArticle(
-                title=title,
-                description=f"Code: {code}",
-                thumb_url=thumb,
-                input_message_content=InputTextMessageContent(
-                    message_text=f"**{title}**\n🔗 [Read Now](https://www.simply-hentai.com{link})\n\n`Code:` {code}",
-                    disable_web_page_preview=False
-                ),
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("📥 Download PDF", callback_data=f"simply_{code}")]
-                ])
-            )
-        )
+        results.append({
+            "title": title,
+            "code": code,
+            "link": link,
+            "thumbnail": thumb
+        })
+
     return results
 
 # ---------------- DOWNLOAD FUNCTIONS ---------------- #
