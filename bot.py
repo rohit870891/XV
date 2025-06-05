@@ -9,12 +9,17 @@ import subprocess, sys
 import aiohttp
 import pyromod.listen
 from pyrogram import Client, filters
-from pyrogram.types import CallbackQuery
-from pyrogram.enums import ParseMode
 from pyrogram.types import (
-    Message, CallbackQuery, InlineQueryResultArticle,
-    InputTextMessageContent, InlineKeyboardMarkup, InlineKeyboardButton
+    Message,
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+    InlineQuery,
+    InlineQueryResultArticle,
+    InputTextMessageContent,
+    CallbackQuery
 )
+from pyrogram.enums import ParseMode
+
 
 # ---------------- CONFIG ---------------- #
 from config import *  # Define APP_ID, API_HASH, TG_BOT_TOKEN, OWNER_ID, PORT, LOGGER, START_MSG, START_PIC
