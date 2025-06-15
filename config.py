@@ -13,7 +13,7 @@ API_HASH = os.environ.get("API_HASH", "c05481978a217fdb11fa6774b15cba32") #Your 
 
 OWNER_ID = int(os.environ.get("OWNER_ID", "7328629001")) # Owner id
 #--------------------------------------------
-PORT = os.environ.get("PORT", "8010")
+PORT = os.environ.get("PORT", "8011")
 #--------------------------------------------
 DB_URI = os.environ.get("DATABASE_URL", "mongodb+srv://YatoPro:ProYato@cluster0.zeaqrcy.mongodb.net/?retryWrites=true&w=majority")
 DB_NAME = os.environ.get("DATABASE_NAME", "Cluooo")
