@@ -201,36 +201,69 @@ async def extract_xvideos_download_link(video_id):
     return match.group(1)
 
 # ---------------- CALLBACK HANDLER ---------------- #
-@app.on_callback_query(filters.regex(r"^xdown_(\w+)$"))
+@app.on_callback_query(filters.regex(r"^xdown_(\d+)$"))
 async def handle_xvideos_download(client: Client, callback: CallbackQuery):
-    video_id = callback.matches[0].group(1)
-    msg = await callback.message.reply("📥 Getting video link...")
+    code = callback.matches[0].group(1)
+    msg = None
+    video_page_url = f"https://www.xvideos.com/video{code}"
+    filename = f"xvideo_{code}.mp4"
 
     try:
-        dlink = await extract_xvideos_download_link(video_id)
-        await msg.edit("📥 Downloading video...")
+        if callback.message:
+            msg = await callback.message.reply("📥 Getting video link...")
+        else:
+            await callback.answer("📥 Getting video link...", show_alert=True)
 
+        # Step 1: Get Direct Video URL
+        scraper = cloudscraper.create_scraper()
+        html = scraper.get(video_page_url).text
+
+        match = re.search(r'html5player\.setVideoUrlHigh["\'](https?://[^"\']+)["\']', html)
+        if not match:
+            raise Exception("❌ Unable to extract video URL.")
+        direct_url = match.group(1)
+
+        if msg:
+            await msg.edit("⬇️ Downloading video from xVideos...")
+        else:
+            await callback.answer("⬇️ Downloading video...", show_alert=True)
+
+        # Step 2: Download video with aiohttp
         async with aiohttp.ClientSession() as session:
-            async with session.get(dlink) as resp:
+            async with session.get(direct_url) as resp:
                 if resp.status != 200:
-                    raise Exception("Download failed.")
+                    raise Exception("❌ Failed to download video.")
 
-                filename = f"xv_{video_id}.mp4"
                 with open(filename, "wb") as f:
-                    f.write(await resp.read())
+                    while True:
+                        chunk = await resp.content.read(1024 * 1024)
+                        if not chunk:
+                            break
+                        f.write(chunk)
 
-        await msg.edit("📤 Uploading video...")
+        # Step 3: Upload to user
+        if msg:
+            await msg.edit("📤 Uploading to Telegram...")
+        else:
+            await callback.answer("📤 Uploading video...", show_alert=True)
+
         await client.send_video(
-            callback.message.chat.id,
+            chat_id=callback.from_user.id,
             video=filename,
-            caption=f"🎥 xVideos ID: {video_id}"
+            caption=f"✅ <b>Here's your video from xVideos:</b>\n🔗 <a href='{video_page_url}'>Original Link</a>",
+            parse_mode=ParseMode.HTML
         )
 
     except Exception as e:
-        await msg.edit(f"❌ Error: {e}")
+        error = f"❌ Error: {e}"
+        if msg:
+            await msg.edit(error)
+        else:
+            await callback.answer(error, show_alert=True)
+
     finally:
-        if os.path.exists(f"xv_{video_id}.mp4"):
-            os.remove(f"xv_{video_id}.mp4")
+        if os.path.exists(filename):
+            os.remove(filename)
 
 # ---------------- UPDATE CMD ---------------- #
 
