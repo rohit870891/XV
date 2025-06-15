@@ -121,7 +121,9 @@ async def search_xvideos(query=None, page=1):
 
     results = []
     base_url = "https://www.xvideos.com"
-    search_url = f"{base_url}/?k={query.replace(' ', '+')}&p={page - 1}" if query else f"{base_url}#/new/{page - 1}"
+    search_url = f"{base_url}/?k={query.replace(' ', '+')}&p={page - 1}" if query else f"{base_url}
+
+#/new/{page - 1}"
 
     print(f"[DEBUG] Fetching: {search_url}")
     scraper = cloudscraper.create_scraper()
