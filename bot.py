@@ -201,34 +201,42 @@ async def extract_xvideos_download_link(video_id):
     return match.group(1)
 
 # ---------------- CALLBACK HANDLER ---------------- #
+
+# Helper to reply or send fallback message
+async def safe_send_text(client, msg, user_id, text):
+    if msg:
+        return await msg.edit(text)
+    else:
+        return await client.send_message(user_id, text)
+
+
 @app.on_callback_query(filters.regex(r"^xdown_(\d+)$"))
 async def handle_xvideos_download(client: Client, callback: CallbackQuery):
     code = callback.matches[0].group(1)
-    msg = None
     video_page_url = f"https://www.xvideos.com/video{code}"
     filename = f"xvideo_{code}.mp4"
+    msg = None
 
     try:
+        # Initial status message
         if callback.message:
             msg = await callback.message.reply("📥 Getting video link...")
         else:
-            await callback.answer("📥 Getting video link...", show_alert=True)
+            await client.send_message(callback.from_user.id, "📥 Getting video link...")
 
-        # Step 1: Get Direct Video URL
+        # Step 1: Fetch video page & extract video URL
         scraper = cloudscraper.create_scraper()
         html = scraper.get(video_page_url).text
 
         match = re.search(r'html5player\.setVideoUrlHigh["\'](https?://[^"\']+)["\']', html)
         if not match:
-            raise Exception("❌ Unable to extract video URL.")
+            raise Exception("❌ Unable to extract video URL. Video might be private or blocked.")
+
         direct_url = match.group(1)
 
-        if msg:
-            await msg.edit("⬇️ Downloading video from xVideos...")
-        else:
-            await callback.answer("⬇️ Downloading video...", show_alert=True)
+        # Step 2: Download video file
+        await safe_send_text(client, msg, callback.from_user.id, "⬇️ Downloading video from xVideos...")
 
-        # Step 2: Download video with aiohttp
         async with aiohttp.ClientSession() as session:
             async with session.get(direct_url) as resp:
                 if resp.status != 200:
@@ -241,11 +249,8 @@ async def handle_xvideos_download(client: Client, callback: CallbackQuery):
                             break
                         f.write(chunk)
 
-        # Step 3: Upload to user
-        if msg:
-            await msg.edit("📤 Uploading to Telegram...")
-        else:
-            await callback.answer("📤 Uploading video...", show_alert=True)
+        # Step 3: Upload to Telegram
+        await safe_send_text(client, msg, callback.from_user.id, "📤 Uploading to Telegram...")
 
         await client.send_video(
             chat_id=callback.from_user.id,
@@ -256,10 +261,7 @@ async def handle_xvideos_download(client: Client, callback: CallbackQuery):
 
     except Exception as e:
         error = f"❌ Error: {e}"
-        if msg:
-            await msg.edit(error)
-        else:
-            await callback.answer(error, show_alert=True)
+        await safe_send_text(client, msg, callback.from_user.id, error)
 
     finally:
         if os.path.exists(filename):
