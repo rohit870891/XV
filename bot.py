@@ -107,9 +107,14 @@ async def inline_search(client: Client, inline_query):
 
 async def search_xvideos(query=None, page=1):
     from urllib.parse import quote
-    query_url = f"https://www.xvideos.com/?k={quote(query)}&p={page}" if query else f"https://www.xvideos.com/new/{page}"
-    results = []
     headers = {"User-Agent": "Mozilla/5.0"}
+
+    if query:
+        query_url = f"https://www.xvideos.com/?k={quote(query)}&p={page}"
+    else:
+        query_url = f"https://www.xvideos.com/"
+
+    results = []
 
     async with aiohttp.ClientSession(headers=headers) as session:
         async with session.get(query_url) as resp:
@@ -122,19 +127,23 @@ async def search_xvideos(query=None, page=1):
 
     for item in items:
         a = item.select_one("a")
+        if not a or not a.get("href"):
+            continue
+
         link = a["href"]
-        title = a["title"]
+        title = a.get("title", link.strip("/").split("/")[-1].replace("_", " ").capitalize())
         code = link.strip("/").split("/")[-1]
+
         thumb = item.select_one("img")
-        thumb_url = thumb.get("data-src") or thumb.get("src")
-        if thumb_url.startswith("//"):
+        thumb_url = thumb.get("data-src") or thumb.get("src") if thumb else None
+        if thumb_url and thumb_url.startswith("//"):
             thumb_url = "https:" + thumb_url
 
         results.append(
             InlineQueryResultArticle(
-                title=title,
+                title=title.strip(),
                 description=f"Video ID: {code}",
-                thumb_url=thumb_url,
+                thumb_url=thumb_url or "https://telegra.ph/file/3d2f07a1675f7c90fda94.jpg",
                 input_message_content=InputTextMessageContent(
                     message_text=f"**{title}**\n🔗 [Watch Now](https://www.xvideos.com{link})\n\n`Video ID:` {code}",
                     disable_web_page_preview=False
