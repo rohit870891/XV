@@ -101,144 +101,99 @@ async def inline_search(client: Client, inline_query):
     query = inline_query.query.strip()
     page = int(inline_query.offset) if inline_query.offset else 1
 
-    results = await search_nhentai(query or None, page)
+    results = await search_xvideos(query or None, page)
     next_offset = str(page + 1) if len(results) == 10 else ""
     await inline_query.answer(results, cache_time=1, is_personal=True, next_offset=next_offset)
 
-async def search_nhentai(query=None, page=1):
+async def search_xvideos(query=None, page=1):
+    from urllib.parse import quote
+    query_url = f"https://www.xvideos.com/?k={quote(query)}&p={page}" if query else f"https://www.xvideos.com/new/{page}"
     results = []
-    url = f"https://nhentai.net/search/?q={query.replace(' ', '+')}&page={page}" if query else f"https://nhentai.net/?page={page}"
+    headers = {"User-Agent": "Mozilla/5.0"}
 
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url) as response:
-            if response.status != 200:
+    async with aiohttp.ClientSession(headers=headers) as session:
+        async with session.get(query_url) as resp:
+            if resp.status != 200:
                 return []
-            html = await response.text()
+            html = await resp.text()
 
     soup = BeautifulSoup(html, "html.parser")
-    gallery_items = soup.select(".gallery")
+    items = soup.select("div.thumb-block")[:10]
 
-    for item in gallery_items[:10]:
-        link = item.select_one("a")["href"]
-        code = link.split("/")[2]
-        title = item.select_one(".caption").text.strip() if item.select_one(".caption") else f"Code {code}"
-        thumb = item.select_one("img").get("data-src") or item.select_one("img").get("src")
-        if thumb.startswith("//"):
-            thumb = "https:" + thumb
+    for item in items:
+        a = item.select_one("a")
+        link = a["href"]
+        title = a["title"]
+        code = link.strip("/").split("/")[-1]
+        thumb = item.select_one("img")
+        thumb_url = thumb.get("data-src") or thumb.get("src")
+        if thumb_url.startswith("//"):
+            thumb_url = "https:" + thumb_url
 
         results.append(
             InlineQueryResultArticle(
                 title=title,
-                description=f"Code: {code}",
-                thumb_url=thumb,
+                description=f"Video ID: {code}",
+                thumb_url=thumb_url,
                 input_message_content=InputTextMessageContent(
-                    message_text=f"**{title}**\n🔗 [Read Now](https://nhentai.net/g/{code}/)\n\n`Code:` {code}",
+                    message_text=f"**{title}**\n🔗 [Watch Now](https://www.xvideos.com{link})\n\n`Video ID:` {code}",
                     disable_web_page_preview=False
                 ),
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("📥 Download PDF", callback_data=f"download_{code}")]
+                    [InlineKeyboardButton("📥 Download Video", callback_data=f"xdown_{code}")]
                 ])
             )
         )
     return results
 
 # ---------------- PAGE DOWNLOADER ---------------- #
-async def download_page(session, url, filename):
-    headers = {"User-Agent": "Mozilla/5.0"}
-    async with session.get(url, headers=headers) as resp:
-        if resp.status != 200:
-            raise Exception(f"Failed to download: {url}")
-        with open(filename, "wb") as f:
-            f.write(await resp.read())
-
-# ---------------- PDF GENERATOR ---------------- #
-async def download_manga_as_pdf(code, progress_callback=None):
-    api_url = f"https://nhentai.net/api/gallery/{code}"
-    folder = f"nhentai_{code}"
-    os.makedirs(folder, exist_ok=True)
-
+async def extract_xvideos_download_link(video_id):
+    url = f"https://www.xvideos.com/video{video_id}/"
     headers = {"User-Agent": "Mozilla/5.0"}
 
-    async with aiohttp.ClientSession() as session:
-        async with session.get(api_url, headers=headers) as resp:
+    async with aiohttp.ClientSession(headers=headers) as session:
+        async with session.get(url) as resp:
             if resp.status != 200:
-                raise Exception("Gallery not found.")
-            data = await resp.json()
+                raise Exception("Failed to fetch video page.")
+            html = await resp.text()
 
-        num_pages = len(data["images"]["pages"])
-        ext_map = {"j": "jpg", "p": "png", "g": "gif", "w": "webp"}
-        media_id = data["media_id"]
-        image_paths = []
+    match = re.search(r'"setVideoUrlHigh"\s*,\s*"([^"]+)"', html)
+    if not match:
+        raise Exception("Download link not found.")
 
-        for i, page in enumerate(data["images"]["pages"], start=1):
-            ext = ext_map.get(page["t"], "jpg")
-            url = f"https://i.nhentai.net/galleries/{media_id}/{i}.{ext}"
-            path = os.path.join(folder, f"{i:03}.{ext}")
-            await download_page(session, url, path)
-            image_paths.append(path)
-            if progress_callback:
-                await progress_callback(i, num_pages, "Downloading")
-
-    # Generate PDF without loading all images in memory
-    pdf_path = f"{folder}.pdf"
-    first_img = Image.open(image_paths[0]).convert("RGB")
-    with open(pdf_path, "wb") as f:
-        first_img.save(f, format="PDF", save_all=True, append_images=[
-            Image.open(p).convert("RGB") for p in image_paths[1:]
-        ])
-
-    for img in image_paths:
-        os.remove(img)
-    os.rmdir(folder)
-    return pdf_path
+    return match.group(1)
 
 # ---------------- CALLBACK HANDLER ---------------- #
-@app.on_callback_query(filters.regex(r"^download_(\d+)$"))
-async def handle_download(client: Client, callback: CallbackQuery):
-    code = callback.matches[0].group(1)
-    pdf_path = None
-    msg = None  # <== FIX: define msg early to avoid UnboundLocalError
+@app.on_callback_query(filters.regex(r"^xdown_(\w+)$"))
+async def handle_xvideos_download(client: Client, callback: CallbackQuery):
+    video_id = callback.matches[0].group(1)
+    msg = await callback.message.reply("📥 Getting video link...")
 
     try:
-        chat_id = callback.message.chat.id if callback.message else callback.from_user.id
+        dlink = await extract_xvideos_download_link(video_id)
+        await msg.edit("📥 Downloading video...")
 
-        if callback.message:
-            msg = await callback.message.reply("📥 Starting download...")
-        else:
-            await callback.answer("📥 Starting download...")
+        async with aiohttp.ClientSession() as session:
+            async with session.get(dlink) as resp:
+                if resp.status != 200:
+                    raise Exception("Download failed.")
 
-        async def progress(cur, total, stage):
-            percent = int((cur / total) * 100)
-            txt = f"{stage}... {percent}%"
-            try:
-                if msg:
-                    await msg.edit(txt)
-                else:
-                    await callback.edit_message_text(txt)
-            except:
-                pass
+                filename = f"xv_{video_id}.mp4"
+                with open(filename, "wb") as f:
+                    f.write(await resp.read())
 
-        pdf_path = await download_manga_as_pdf(code, progress)
-
-        if msg:
-            await msg.edit("📤 Uploading PDF...")
-        else:
-            await callback.edit_message_text("📤 Uploading PDF...")
-
-        await client.send_document(chat_id, document=pdf_path, caption=f"📖 Manga: {code}")
+        await msg.edit("📤 Uploading video...")
+        await client.send_video(
+            callback.message.chat.id,
+            video=filename,
+            caption=f"🎥 xVideos ID: {video_id}"
+        )
 
     except Exception as e:
-        err = f"❌ Error: {e}"
-        try:
-            if msg:
-                await msg.edit(err)
-            else:
-                await callback.edit_message_text(err)
-        except:
-            pass
+        await msg.edit(f"❌ Error: {e}")
     finally:
-        if pdf_path and os.path.exists(pdf_path):
-            os.remove(pdf_path)
+        if os.path.exists(f"xv_{video_id}.mp4"):
+            os.remove(f"xv_{video_id}.mp4")
 
 # ---------------- UPDATE CMD ---------------- #
 
