@@ -5,6 +5,7 @@ from bs4 import BeautifulSoup
 from PIL import Image
 from io import BytesIO
 import subprocess, sys
+from urllib.parse import quote
 
 import aiohttp
 import pyromod.listen
@@ -80,8 +81,8 @@ app = Bot()
 @app.on_message(filters.command('start') & filters.private)
 async def start_command(_, message: Message):
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔎 Search Manga", switch_inline_query_current_chat="")],
-        [InlineKeyboardButton("💻 Contact Developer", url="https://t.me/rohit_1888")]
+        [InlineKeyboardButton("🔎 sᴇᴀʀᴄʜ ᴘᴏʀɴ", switch_inline_query_current_chat="")],
+        [InlineKeyboardButton("💻 ᴄᴏɴᴛᴀᴄᴛ ᴅᴇᴠᴇʟᴏᴘᴇʀ", url="https://t.me/rohit_1888")]
     ])
     await message.reply_photo(
         photo=START_PIC,
@@ -106,13 +107,13 @@ async def inline_search(client: Client, inline_query):
     await inline_query.answer(results, cache_time=1, is_personal=True, next_offset=next_offset)
 
 async def search_xvideos(query=None, page=1):
-    from urllib.parse import quote
     headers = {"User-Agent": "Mozilla/5.0"}
 
+    # Build search or homepage URL
     if query:
         query_url = f"https://www.xvideos.com/?k={quote(query)}&p={page}"
     else:
-        query_url = f"https://www.xvideos.com/"
+        query_url = "https://www.xvideos.com/"
 
     results = []
 
@@ -130,10 +131,16 @@ async def search_xvideos(query=None, page=1):
         if not a or not a.get("href"):
             continue
 
-        link = a["href"]
-        title = a.get("title", link.strip("/").split("/")[-1].replace("_", " ").capitalize())
-        code = link.strip("/").split("/")[-1]
+        link = a["href"]  # e.g., /video123456/title-here
+        match = re.search(r"/video(\d+)", link)
+        code = match.group(1) if match else None
+        if not code:
+            continue  # skip if video ID not found
 
+        # Safe title (fallback to 'Video {code}' if missing)
+        title = a.get("title", f"Video {code}")
+
+        # Get thumbnail
         thumb = item.select_one("img")
         thumb_url = thumb.get("data-src") or thumb.get("src") if thumb else None
         if thumb_url and thumb_url.startswith("//"):
@@ -145,7 +152,7 @@ async def search_xvideos(query=None, page=1):
                 description=f"Video ID: {code}",
                 thumb_url=thumb_url or "https://telegra.ph/file/3d2f07a1675f7c90fda94.jpg",
                 input_message_content=InputTextMessageContent(
-                    message_text=f"**{title}**\n🔗 [Watch Now](https://www.xvideos.com{link})\n\n`Video ID:` {code}",
+                    message_text=f"**{title}**\n🔗 [Watch Now](https://www.xvideos.com/video{code})\n\n`Video ID:` {code}",
                     disable_web_page_preview=False
                 ),
                 reply_markup=InlineKeyboardMarkup([
@@ -153,6 +160,7 @@ async def search_xvideos(query=None, page=1):
                 ])
             )
         )
+
     return results
 
 # ---------------- PAGE DOWNLOADER ---------------- #
