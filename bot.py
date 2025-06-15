@@ -196,7 +196,7 @@ async def search_xvideos(query=None, page=1):
     return results
 
 # ---------------- PAGE DOWNLOADER ---------------- #
-async def extract_xvideos_download_link(video_id):
+async def extract_xvideos_download_links(video_id):
     url = f"https://www.xvideos.com/video{video_id}/"
     headers = {"User-Agent": "Mozilla/5.0"}
 
@@ -206,11 +206,24 @@ async def extract_xvideos_download_link(video_id):
                 raise Exception("Failed to fetch video page.")
             html = await resp.text()
 
-    match = re.search(r'"setVideoUrlHigh"\s*,\s*"([^"]+)"', html)
-    if not match:
-        raise Exception("Download link not found.")
+    qualities = {}
 
-    return match.group(1)
+    # Match different quality URLs
+    matches = {
+        "240p": re.search(r'setVideoUrlLow"\s*,\s*"([^"]+)"', html),
+        "480p": re.search(r'setVideoUrl"\s*,\s*"([^"]+)"', html),
+        "720p": re.search(r'setVideoUrlHigh"\s*,\s*"([^"]+)"', html),
+        "1080p": re.search(r'setVideoHLS"\s*,\s*"([^"]+)"', html)  # May be m3u8
+    }
+
+    for quality, match in matches.items():
+        if match:
+            qualities[quality] = match.group(1)
+
+    if not qualities:
+        raise Exception("No downloadable qualities found.")
+
+    return qualities
 
 # ---------------- CALLBACK HANDLER ---------------- #
 
@@ -225,35 +238,45 @@ async def safe_send_text(client, msg, user_id, text):
 @app.on_callback_query(filters.regex(r"^xdown_(\d+)$"))
 async def handle_xvideos_download(client: Client, callback: CallbackQuery):
     code = callback.matches[0].group(1)
-    video_page_url = f"https://www.xvideos.com/video{code}"
-    filename = f"xvideo_{code}.mp4"
-    msg = None
+    msg = await callback.message.reply("🔍 Fetching available video qualities...")
 
     try:
-        # Initial status message
-        if callback.message:
-            msg = await callback.message.reply("📥 Getting video link...")
-        else:
-            await client.send_message(callback.from_user.id, "📥 Getting video link...")
+        qualities = await extract_xvideos_download_links(code)
 
-        # Step 1: Fetch video page & extract video URL
-        scraper = cloudscraper.create_scraper()
-        html = scraper.get(video_page_url).text
+        buttons = [
+            [InlineKeyboardButton(f"⬇️ {q}", callback_data=f"xvqual_{code}_{q}")]
+            for q in sorted(qualities.keys())
+        ]
+        buttons.append([InlineKeyboardButton("❌ Cancel", callback_data="close")])
 
-        match = re.search(r'html5player\.setVideoUrlHigh["\'](https?://[^"\']+)["\']', html)
-        if not match:
-            raise Exception("❌ Unable to extract video URL. Video might be private or blocked.")
+        await msg.edit(
+            "Select the video quality you want to download:",
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
+    except Exception as e:
+        await msg.edit(f"❌ Error: {e}")
 
-        direct_url = match.group(1)
+@app.on_callback_query(filters.regex(r"^xvqual_(\d+)_(\w+)$"))
+async def handle_xvideos_quality_choice(client: Client, callback: CallbackQuery):
+    code, quality = callback.matches[0].group(1), callback.matches[0].group(2)
+    msg = await callback.message.edit(f"📥 Preparing {quality} video...")
 
-        # Step 2: Download video file
-        await safe_send_text(client, msg, callback.from_user.id, "⬇️ Downloading video from xVideos...")
+    try:
+        qualities = await extract_xvideos_download_links(code)
+        url = qualities.get(quality)
+
+        if not url:
+            raise Exception(f"{quality} quality not available.")
+
+        filename = f"xvideo_{code}_{quality}.mp4"
+
+        # Download video
+        await msg.edit("⬇️ Downloading video...")
 
         async with aiohttp.ClientSession() as session:
-            async with session.get(direct_url) as resp:
+            async with session.get(url) as resp:
                 if resp.status != 200:
                     raise Exception("❌ Failed to download video.")
-
                 with open(filename, "wb") as f:
                     while True:
                         chunk = await resp.content.read(1024 * 1024)
@@ -261,20 +284,16 @@ async def handle_xvideos_download(client: Client, callback: CallbackQuery):
                             break
                         f.write(chunk)
 
-        # Step 3: Upload to Telegram
-        await safe_send_text(client, msg, callback.from_user.id, "📤 Uploading to Telegram...")
+        await msg.edit("📤 Uploading to Telegram...")
 
         await client.send_video(
             chat_id=callback.from_user.id,
             video=filename,
-            caption=f"✅ <b>Here's your video from xVideos:</b>\n🔗 <a href='{video_page_url}'>Original Link</a>",
+            caption=f"✅ Downloaded {quality} video.\n🔗 <a href='https://www.xvideos.com/video{code}'>Watch on xVideos</a>",
             parse_mode=ParseMode.HTML
         )
-
     except Exception as e:
-        error = f"❌ Error: {e}"
-        await safe_send_text(client, msg, callback.from_user.id, error)
-
+        await msg.edit(f"❌ Error: {e}")
     finally:
         if os.path.exists(filename):
             os.remove(filename)
