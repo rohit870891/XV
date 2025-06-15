@@ -118,13 +118,22 @@ async def inline_search(client, inline_query):
     await inline_query.answer(results, cache_time=1, is_personal=True, next_offset=next_offset)
 
 async def search_xvideos(query=None, page=1):
+    import re
+    import cloudscraper
+    from bs4 import BeautifulSoup
+    from pyrogram.types import (
+        InlineQueryResultArticle, InputTextMessageContent,
+        InlineKeyboardMarkup, InlineKeyboardButton
+    )
+    from pyrogram.enums import ParseMode
+
     results = []
     base_url = "https://www.xvideos.com"
     search_url = f"{base_url}/?k={query.replace(' ', '+')}&p={page - 1}" if query else f"{base_url}/new/{page - 1}"
 
     print(f"[DEBUG] Fetching: {search_url}")
-
     scraper = cloudscraper.create_scraper()
+
     try:
         html = scraper.get(search_url).text
     except Exception as e:
@@ -147,39 +156,50 @@ async def search_xvideos(query=None, page=1):
 
         href = a["href"]
         code = href.split("/")[-1].split("_")[0]
-        title = a.get("title", "").strip() or "Untitled Video"
 
-        # Get thumbnail
+        # Title
+        title_tag = block.select_one("p.title") or block.select_one("a.title")
+        title = title_tag.text.strip() if title_tag else f"Video {code}"
+
+        # Duration
+        duration_tag = block.select_one("span.duration")
+        duration = duration_tag.text.strip() if duration_tag else "Unknown"
+
+        # Rating (as title attribute from .rating)
+        rating_tag = block.select_one("div.rating")
+        rating = rating_tag.get("title", "").strip() if rating_tag else "Unrated"
+
+        # Thumbnail
         img = block.find("img")
-        thumb_url = img["data-src"] if img and img.has_attr("data-src") else (img["src"] if img else "")
-        if thumb_url.startswith("//"):
-            thumb_url = "https:" + thumb_url
-        elif not thumb_url.startswith("http"):
-            thumb_url = "https://telegra.ph/file/3d2f07a1675f7c90fda94.jpg"  # fallback image
+        thumb = img.get("data-src") if img and img.has_attr("data-src") else img.get("src") if img else ""
+        if thumb.startswith("//"):
+            thumb = "https:" + thumb
+        elif not thumb.startswith("http"):
+            thumb = "https://telegra.ph/file/3d2f07a1675f7c90fda94.jpg"  # fallback
 
-        # Build result
-        try:
-            results.append(
-                InlineQueryResultArticle(
-                    title=title[:64],
-                    description=f"Video ID: {code}",
-                    thumb_url=thumb_url,
-                    input_message_content=InputTextMessageContent(
-                        message_text=(
-                            f"<b>{title}</b>\n"
-                            f"🔗 <a href='https://www.xvideos.com{href}'>Watch on Xvideos</a>\n\n"
-                            f"<code>Video ID:</code> {code}"
-                        ),
-                        parse_mode=ParseMode.HTML,
-                        disable_web_page_preview=False
+        description = f"⏱ {duration} | ⭐ {rating}"
+
+        results.append(
+            InlineQueryResultArticle(
+                title=title[:64],
+                description=description,
+                thumb_url=thumb,
+                input_message_content=InputTextMessageContent(
+                    message_text=(
+                        f"<b>{title}</b>\n"
+                        f"⏱ Duration: {duration}\n"
+                        f"⭐ Rating: {rating}\n"
+                        f"🔗 <a href='https://www.xvideos.com{href}'>Watch on xVideos</a>\n\n"
+                        f"<code>Video ID:</code> {code}"
                     ),
-                    reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("📥 Download Video", callback_data=f"xdown_{code[:50]}")]
-                    ])
-                )
+                    parse_mode=ParseMode.HTML,
+                    disable_web_page_preview=False
+                ),
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📥 Download Video", callback_data=f"xdown_{code[:50]}")]
+                ])
             )
-        except Exception as e:
-            print(f"[ERROR] Skipping video due to error: {e}")
+        )
 
     return results
 
