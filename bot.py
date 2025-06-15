@@ -6,6 +6,7 @@ from PIL import Image
 from io import BytesIO
 import subprocess, sys
 from urllib.parse import quote
+import cloudscraper
 
 import aiohttp
 import pyromod.listen
@@ -107,40 +108,43 @@ async def inline_search(client: Client, inline_query):
     await inline_query.answer(results, cache_time=1, is_personal=True, next_offset=next_offset)
 
 async def search_xvideos(query=None, page=1):
-    headers = {"User-Agent": "Mozilla/5.0"}
+    # Setup scraper
+    scraper = cloudscraper.create_scraper(browser='chrome')
 
-    # Build search or homepage URL
+    # Build URL
     if query:
         query_url = f"https://www.xvideos.com/?k={quote(query)}&p={page}"
     else:
         query_url = "https://www.xvideos.com/"
 
-    results = []
+    print(f"[DEBUG] Fetching: {query_url}")
 
-    async with aiohttp.ClientSession(headers=headers) as session:
-        async with session.get(query_url) as resp:
-            if resp.status != 200:
-                return []
-            html = await resp.text()
+    # Fetch HTML
+    try:
+        html = scraper.get(query_url).text
+    except Exception as e:
+        print(f"[ERROR] Failed to fetch page: {e}")
+        return []
 
+    # Parse
     soup = BeautifulSoup(html, "html.parser")
     items = soup.select("div.thumb-block")[:10]
+    results = []
+
+    print(f"[DEBUG] Found {len(items)} video items")
 
     for item in items:
         a = item.select_one("a")
         if not a or not a.get("href"):
             continue
 
-        link = a["href"]  # e.g., /video123456/title-here
+        link = a["href"]
         match = re.search(r"/video(\d+)", link)
         code = match.group(1) if match else None
         if not code:
-            continue  # skip if video ID not found
+            continue
 
-        # Safe title (fallback to 'Video {code}' if missing)
         title = a.get("title", f"Video {code}")
-
-        # Get thumbnail
         thumb = item.select_one("img")
         thumb_url = thumb.get("data-src") or thumb.get("src") if thumb else None
         if thumb_url and thumb_url.startswith("//"):
