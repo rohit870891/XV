@@ -118,14 +118,6 @@ async def inline_search(client, inline_query):
     await inline_query.answer(results, cache_time=1, is_personal=True, next_offset=next_offset)
 
 async def search_xvideos(query=None, page=1):
-    import re
-    import cloudscraper
-    from bs4 import BeautifulSoup
-    from pyrogram.types import (
-        InlineQueryResultArticle, InputTextMessageContent,
-        InlineKeyboardMarkup, InlineKeyboardButton
-    )
-    from pyrogram.enums import ParseMode
 
     results = []
     base_url = "https://www.xvideos.com"
