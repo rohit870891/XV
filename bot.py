@@ -99,71 +99,87 @@ async def start_command(_, message: Message):
 
 # ---------------- INLINE SEARCH ---------------- #
 @app.on_inline_query()
-async def inline_search(client: Client, inline_query):
+async def inline_search(client, inline_query):
     query = inline_query.query.strip()
     page = int(inline_query.offset) if inline_query.offset else 1
 
     results = await search_xvideos(query or None, page)
     next_offset = str(page + 1) if len(results) == 10 else ""
+
+    if not results:
+        results.append(
+            InlineQueryResultArticle(
+                title="No results found",
+                description="Try a different keyword",
+                input_message_content=InputTextMessageContent("No results found.")
+            )
+        )
+
     await inline_query.answer(results, cache_time=1, is_personal=True, next_offset=next_offset)
 
 async def search_xvideos(query=None, page=1):
-    # Setup scraper
-    scraper = cloudscraper.create_scraper(browser='chrome')
+    results = []
+    base_url = "https://www.xvideos.com"
+    search_url = f"{base_url}/?k={query.replace(' ', '+')}&p={page - 1}" if query else f"{base_url}/new/{page - 1}"
 
-    # Build URL
-    if query:
-        query_url = f"https://www.xvideos.com/?k={quote(query)}&p={page}"
-    else:
-        query_url = "https://www.xvideos.com/"
+    print(f"[DEBUG] Fetching: {search_url}")
 
-    print(f"[DEBUG] Fetching: {query_url}")
-
-    # Fetch HTML
+    scraper = cloudscraper.create_scraper()
     try:
-        html = scraper.get(query_url).text
+        html = scraper.get(search_url).text
     except Exception as e:
-        print(f"[ERROR] Failed to fetch page: {e}")
+        print("[ERROR] Failed to fetch page:", e)
         return []
 
-    # Parse
     soup = BeautifulSoup(html, "html.parser")
-    items = soup.select("div.thumb-block")[:10]
-    results = []
+    video_blocks = soup.select("div.thumb-block")
 
-    print(f"[DEBUG] Found {len(items)} video items")
+    if not video_blocks:
+        print("[DEBUG] No videos found")
+        return []
 
-    for item in items:
-        a = item.select_one("a")
-        if not a or not a.get("href"):
+    print(f"[DEBUG] Found {len(video_blocks)} video items")
+
+    for block in video_blocks[:10]:
+        a = block.find("a", href=True)
+        if not a:
             continue
 
-        link = a["href"]
-        match = re.search(r"/video(\d+)", link)
-        code = match.group(1) if match else None
-        if not code:
-            continue
+        href = a["href"]
+        code = href.split("/")[-1].split("_")[0]
+        title = a.get("title", "").strip() or "Untitled Video"
 
-        title = a.get("title", f"Video {code}")
-        thumb = item.select_one("img")
-        thumb_url = thumb.get("data-src") or thumb.get("src") if thumb else None
-        if thumb_url and thumb_url.startswith("//"):
+        # Get thumbnail
+        img = block.find("img")
+        thumb_url = img["data-src"] if img and img.has_attr("data-src") else (img["src"] if img else "")
+        if thumb_url.startswith("//"):
             thumb_url = "https:" + thumb_url
+        elif not thumb_url.startswith("http"):
+            thumb_url = "https://telegra.ph/file/3d2f07a1675f7c90fda94.jpg"  # fallback image
 
-        results.append(
-            InlineQueryResultArticle(
-                title=title.strip(),
-                description=f"Video ID: {code}",
-                thumb_url=thumb_url or "https://telegra.ph/file/3d2f07a1675f7c90fda94.jpg",
-                input_message_content=InputTextMessageContent(
-                    message_text=f"**{title}**\n🔗 [Watch Now](https://www.xvideos.com/video{code})\n\n`Video ID:` {code}",
-                    disable_web_page_preview=False
-                ),
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("📥 Download Video", callback_data=f"xdown_{code}")]
-                ])
+        # Build result
+        try:
+            results.append(
+                InlineQueryResultArticle(
+                    title=title[:64],
+                    description=f"Video ID: {code}",
+                    thumb_url=thumb_url,
+                    input_message_content=InputTextMessageContent(
+                        message_text=(
+                            f"<b>{title}</b>\n"
+                            f"🔗 <a href='https://www.xvideos.com{href}'>Watch on Xvideos</a>\n\n"
+                            f"<code>Video ID:</code> {code}"
+                        ),
+                        parse_mode="HTML",
+                        disable_web_page_preview=False
+                    ),
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("📥 Download Video", callback_data=f"xdown_{code[:50]}")]
+                    ])
+                )
             )
-        )
+        except Exception as e:
+            print(f"[ERROR] Skipping video due to error: {e}")
 
     return results
 
