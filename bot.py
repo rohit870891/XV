@@ -170,7 +170,7 @@ async def search_xvideos(query=None, page=1):
                             f"🔗 <a href='https://www.xvideos.com{href}'>Watch on Xvideos</a>\n\n"
                             f"<code>Video ID:</code> {code}"
                         ),
-                        parse_mode="HTML",
+                        parse_mode=ParseMode.HTML,
                         disable_web_page_preview=False
                     ),
                     reply_markup=InlineKeyboardMarkup([
